@@ -324,7 +324,9 @@ function animate() {
     field.update(delta);
     
     // Update catch counter display
-    catchCounter.innerHTML = `Catches: ${field.catchCount}`;
+    if (field.receiver) {
+        catchCounter.innerHTML = `Catches: ${field.receiver.getCatchCount()}`;
+    }
     
     // Check if player is throwing
     const throwData = player.getThrowData();
