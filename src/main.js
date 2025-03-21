@@ -193,7 +193,7 @@ document.getElementById('resume-button').addEventListener('click', () => {
 
 // Lighting
 function setupLighting() {
-    const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.5);
+    const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.7); // Increased ambient light
     scene.add(ambientLight);
     
     const directionalLight = new THREE.DirectionalLight(0xFFFFFF, 0.8);
@@ -210,6 +210,9 @@ function setupLighting() {
 
 // Initialize game
 function init() {
+    // Add camera to scene first
+    scene.add(camera);
+    
     // Create game objects
     player = new Player(camera, renderer);
     field = new Field(scene, world);

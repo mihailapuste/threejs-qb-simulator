@@ -167,11 +167,11 @@ class Football {
 
     positionInHands() {
         // Position the football at the bottom of the screen as if being held
-        const handPosition = new THREE.Vector3(0.3, -0.4, -0.5);
+        const handPosition = new THREE.Vector3(0.2, -0.35, -0.4);
         
         // Convert to world position
         this.mesh.position.copy(handPosition);
-        this.mesh.rotation.set(0, Math.PI / 4, 0); // Rotate the ball to show laces
+        this.mesh.rotation.set(-0.5, Math.PI / 10, 0.2); // Rotate the ball to show laces
         
         // Update the mesh position relative to the camera
         this.camera.add(this.mesh);
