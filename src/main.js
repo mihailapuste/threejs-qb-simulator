@@ -119,6 +119,7 @@ controlsInfo.innerHTML = `
     <p>WASD/Arrow Keys: Move</p>
     <p>Spacebar: Throw (hold to charge)</p>
     <p>ESC: Pause game</p>
+    <p>Q: Get new football</p>
 `;
 document.getElementById('game-container').appendChild(controlsInfo);
 
@@ -294,6 +295,11 @@ function animate() {
     const throwData = player.getThrowData();
     if (throwData) {
         football.throw(throwData.direction, throwData.power);
+    }
+    
+    // Check if player has requested a new football with Q key
+    if (player.getNewFootballRequest()) {
+        football.forceNewFootball();
     }
     
     // Update throw power indicator and crosshair

@@ -9,6 +9,7 @@ class Football {
         this.mesh = null;
         this.body = null;
         this.thrownBalls = [];
+        this.needNewFootball = true;
         this.init();
     }
 
@@ -200,6 +201,15 @@ class Football {
                     
                     // Apply the spiral rotation
                     ball.mesh.quaternion.multiply(spiralQuaternion);
+                } else if (!ball.landed && ball.body.velocity.length() < 0.1) {
+                    // Ball has landed
+                    ball.landed = true;
+                    
+                    // Create a new football for the player's hands if needed
+                    if (this.needNewFootball && this.mesh === null) {
+                        this.createNewFootballForHands();
+                        this.needNewFootball = false;
+                    }
                 }
                 
                 // Fade out the trajectory line after 2 seconds
@@ -258,13 +268,15 @@ class Football {
     }
 
     throw(direction, power) {
-        // Create a clone of the football for throwing
+        // Get the current world position of the football
         const worldPosition = new THREE.Vector3();
         this.mesh.getWorldPosition(worldPosition);
         
-        // Clone the football mesh
-        const thrownFootball = this.mesh.clone();
-        this.scene.add(thrownFootball);
+        // Remove the football from the camera (so it's no longer attached to the view)
+        this.camera.remove(this.mesh);
+        
+        // Add the football to the scene directly
+        this.scene.add(this.mesh);
         
         // Calculate the position offset for a right-handed throw
         // Get camera direction and right vector
@@ -290,8 +302,8 @@ class Football {
             .add(cameraUp.multiplyScalar(upOffset))
             .add(cameraDirection.multiplyScalar(forwardOffset));
         
-        // Set the position of the thrown football
-        thrownFootball.position.copy(throwPosition);
+        // Set the position of the football
+        this.mesh.position.copy(throwPosition);
         
         // Calculate a target point far in the distance at the center of the screen
         // but slightly below to create a downward arc
@@ -313,7 +325,7 @@ class Football {
         initialQuaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), correctedDirection);
         
         // Apply the orientation
-        thrownFootball.quaternion.copy(initialQuaternion);
+        this.mesh.quaternion.copy(initialQuaternion);
         
         // Create a new physics body for the thrown football
         const radiusX = 0.1;
@@ -349,26 +361,25 @@ class Football {
         
         // Add the thrown football to the list of thrown balls
         this.thrownBalls.push({
-            mesh: thrownFootball,
+            mesh: this.mesh,
             body: thrownBody,
             timeThrownAt: Date.now(),
+            throwTime: Date.now(),
             caught: false,
             throwDirection: correctedDirection,
             initialQuaternion: initialQuaternion.clone(),
             spiralRotation: 0,
             spiralSpeed: spiralSpeed,
-            trajectoryLine: trajectoryLine
+            trajectoryLine: trajectoryLine,
+            landed: false
         });
         
         // Add a trail effect for the football
-        this.addTrailEffect(thrownFootball);
+        this.addTrailEffect(this.mesh);
         
-        // Keep only the last 10 thrown footballs to manage memory
-        if (this.thrownBalls.length > 10) {
-            const oldestBall = this.thrownBalls.shift();
-            this.scene.remove(oldestBall.mesh);
-            this.world.removeBody(oldestBall.body);
-        }
+        // We'll create a new football in the update method when the thrown one lands
+        this.needNewFootball = true;
+        this.mesh = null; // Clear the current football reference
     }
     
     addTrailEffect(footballMesh) {
@@ -562,6 +573,94 @@ class Football {
         return trajectoryLine;
     }
     
+    createNewFootballForHands() {
+        // Create a football shape (ellipsoid with pointed ends)
+        const radius = 0.1;  // Base radius for circular front profile
+        const length = 0.2;  // Length of the football
+        
+        // Create a custom geometry for the football with pointed ends
+        const footballGeometry = new THREE.SphereGeometry(radius, 32, 16);
+        
+        // Modify the vertices to create more pointed ends
+        const positions = footballGeometry.attributes.position;
+        
+        // Create a color attribute for vertex coloring
+        const colors = new THREE.Float32BufferAttribute(positions.count * 3, 3);
+        
+        // Base color for the football (medium brown)
+        const baseColor = new THREE.Color(0x8B4513);
+        // Darker color for the tips (darker brown)
+        const tipColor = new THREE.Color(0x5D2906);
+        
+        for (let i = 0; i < positions.count; i++) {
+            const x = positions.getX(i);
+            const y = positions.getY(i);
+            const z = positions.getZ(i);
+            
+            // Scale in z direction to create the elongated shape
+            const newZ = z * 2.0;
+            
+            // Apply a non-linear transformation to create more pointed ends
+            // This makes the ends of the football more pointed while keeping the middle full
+            const pointiness = 0.4; // Higher values make more pointed ends
+            const scaleFactor = 1.0 - pointiness * Math.pow(Math.abs(newZ) / length, 2);
+            
+            // Apply the transformation
+            positions.setX(i, x * scaleFactor);
+            positions.setY(i, y * scaleFactor);
+            positions.setZ(i, newZ);
+            
+            // Calculate color based on position
+            // The closer to the tips, the darker the color
+            const tipFactor = Math.pow(Math.abs(newZ) / length, 1.5);
+            const color = new THREE.Color().lerpColors(baseColor, tipColor, tipFactor);
+            
+            // Set the color for this vertex
+            colors.setXYZ(i, color.r, color.g, color.b);
+        }
+        
+        // Add the color attribute to the geometry
+        footballGeometry.setAttribute('color', colors);
+        
+        // Update the geometry
+        footballGeometry.computeVertexNormals();
+        
+        // Create football material with vertex colors enabled
+        const footballMaterial = new THREE.MeshStandardMaterial({
+            vertexColors: true,
+            roughness: 0.8,
+            metalness: 0.1
+        });
+        
+        this.mesh = new THREE.Mesh(footballGeometry, footballMaterial);
+        this.mesh.castShadow = true;
+        
+        // Add laces to the football (like in the image)
+        this.addLaces(this.mesh, radius);
+        
+        // Position the football in hands
+        this.positionInHands();
+    }
+
+    forceNewFootball() {
+        // If we already have a football in hands, don't create another one
+        if (this.mesh !== null) {
+            return;
+        }
+        
+        // Create a new football for the player's hands
+        this.createNewFootballForHands();
+        this.needNewFootball = false;
+        
+        console.log("New football created by Q key press");
+    }
+
+    // Check if any thrown footballs are currently thrown
+    isThrown() {
+        console.log(`isThrown check: ${this.thrownBalls.length > 0} (${this.thrownBalls.length} balls)`);
+        return this.thrownBalls.length > 0;
+    }
+
     // Check if any thrown football is caught by the receiver
     checkCatch(receiverBody) {
         if (!this.thrownBalls || this.thrownBalls.length === 0) {
@@ -618,6 +717,23 @@ class Football {
             
             // Remove the ball from the array
             this.thrownBalls.splice(index, 1);
+        }
+        
+        // Keep only the last 10 thrown footballs to manage memory
+        if (this.thrownBalls.length > 10) {
+            const oldestBall = this.thrownBalls.shift();
+            this.scene.remove(oldestBall.mesh);
+            this.world.removeBody(oldestBall.body);
+            
+            // Remove the trajectory line if it exists
+            if (oldestBall.trajectoryLine) {
+                this.scene.remove(oldestBall.trajectoryLine);
+                
+                // Remove the landing spot marker if it exists
+                if (oldestBall.trajectoryLine.userData.landingSpot) {
+                    this.scene.remove(oldestBall.trajectoryLine.userData.landingSpot);
+                }
+            }
         }
     }
 }

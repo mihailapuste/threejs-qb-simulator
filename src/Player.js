@@ -24,6 +24,9 @@ class Player {
         // Body parts
         this.bodyGroup = null;
         
+        // New football request flag
+        this.requestNewFootball = false;
+        
         this.init();
     }
 
@@ -191,6 +194,11 @@ class Player {
                     this.startThrow();
                 }
                 break;
+            case 'KeyQ':
+                // Request a new football
+                this.requestNewFootball = true;
+                console.log("Q key pressed - requesting new football");
+                break;
         }
     }
     
@@ -273,6 +281,15 @@ class Player {
     
     getThrowPower() {
         return this.throwPower / this.maxThrowPower; // Return normalized value between 0 and 1
+    }
+
+    getNewFootballRequest() {
+        if (this.requestNewFootball) {
+            console.log("Football request detected and being processed");
+            this.requestNewFootball = false;
+            return true;
+        }
+        return false;
     }
 
     update(delta) {
