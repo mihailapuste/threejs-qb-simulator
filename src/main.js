@@ -28,6 +28,26 @@ scoreDisplay.style.zIndex = '100';
 scoreDisplay.innerHTML = 'Score: 0';
 document.getElementById('game-container').appendChild(scoreDisplay);
 
+// Create controls info display
+const controlsInfo = document.createElement('div');
+controlsInfo.id = 'controls-info';
+controlsInfo.style.position = 'absolute';
+controlsInfo.style.bottom = '20px';
+controlsInfo.style.left = '20px';
+controlsInfo.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+controlsInfo.style.color = 'white';
+controlsInfo.style.padding = '10px';
+controlsInfo.style.borderRadius = '5px';
+controlsInfo.style.zIndex = '100';
+controlsInfo.innerHTML = `
+    <h3>Controls:</h3>
+    <p>Mouse: Look around</p>
+    <p>WASD/Arrow Keys: Move</p>
+    <p>Left Mouse Button: Throw (hold to charge)</p>
+    <p>ESC: Pause game</p>
+`;
+document.getElementById('game-container').appendChild(controlsInfo);
+
 // Scene setup
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87CEEB); // Sky blue
