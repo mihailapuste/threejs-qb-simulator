@@ -201,6 +201,22 @@ class Football {
                     // Apply the spiral rotation
                     ball.mesh.quaternion.multiply(spiralQuaternion);
                 }
+                
+                // Fade out the trajectory line after 2 seconds
+                if (ball.trajectoryLine) {
+                    const elapsedTime = (Date.now() - ball.timeThrownAt) / 1000; // in seconds
+                    if (elapsedTime > 2) {
+                        // Fade out over 1 second
+                        const fadeOutFactor = Math.max(0, 1 - (elapsedTime - 2));
+                        ball.trajectoryLine.material.opacity = 0.7 * fadeOutFactor;
+                        
+                        // Remove the trajectory line after it's fully faded out
+                        if (fadeOutFactor <= 0) {
+                            this.scene.remove(ball.trajectoryLine);
+                            ball.trajectoryLine = null;
+                        }
+                    }
+                }
             });
         }
         
@@ -232,8 +248,8 @@ class Football {
         
         // Position the football to the right and slightly above the camera
         const rightOffset = 0.4; // Distance to the right
-        const upOffset = 0.2;    // Distance up
-        const forwardOffset = 0.5; // Distance forward
+        const upOffset = 0.4;    // Distance up
+        const forwardOffset = 0.8; // Distance forward
         
         // Calculate the new position
         const throwPosition = new THREE.Vector3().copy(this.camera.position)
@@ -244,13 +260,24 @@ class Football {
         // Set the position of the thrown football
         thrownFootball.position.copy(throwPosition);
         
-        // Normalize the throw direction
-        const throwDirection = direction.clone().normalize();
+        // Calculate a target point far in the distance at the center of the screen
+        // but slightly below to create a downward arc
+        const targetDistance = 100; // Far away point
+        const downwardAdjustment = new THREE.Vector3(5, -8, 0); // Aim even lower
+        
+        const targetPoint = new THREE.Vector3()
+            .copy(this.camera.position)
+            .add(direction.clone().multiplyScalar(targetDistance))
+            .add(downwardAdjustment); // Add downward adjustment
+        
+        // Calculate corrected direction from throw position to target point
+        const correctedDirection = new THREE.Vector3()
+            .subVectors(targetPoint, throwPosition)
+            .normalize();
         
         // Create a quaternion that orients the football along the throw direction
-        // with the pointy end (z-axis) aligned with the direction
         const initialQuaternion = new THREE.Quaternion();
-        initialQuaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), throwDirection);
+        initialQuaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), correctedDirection);
         
         // Apply the orientation
         thrownFootball.quaternion.copy(initialQuaternion);
@@ -273,16 +300,19 @@ class Football {
         thrownBody.position.copy(throwPosition);
         this.world.addBody(thrownBody);
         
-        // Apply force to throw the football
+        // Apply force to throw the football using the corrected direction
         const throwForce = 25 * (power / 100);
         thrownBody.velocity.set(
-            direction.x * throwForce,
-            direction.y * throwForce,
-            direction.z * throwForce
+            correctedDirection.x * throwForce,
+            correctedDirection.y * throwForce,
+            correctedDirection.z * throwForce
         );
         
         // Calculate spiral speed - tight spiral with consistent rotation
         const spiralSpeed = 0.15 + (power / 100) * 0.1; // Slightly faster spiral
+        
+        // Create trajectory visualization
+        const trajectoryLine = this.createTrajectoryLine(throwPosition, correctedDirection, throwForce);
         
         // Add the thrown football to the list of thrown balls
         this.thrownBalls.push({
@@ -290,10 +320,11 @@ class Football {
             body: thrownBody,
             timeThrownAt: Date.now(),
             caught: false,
-            throwDirection: throwDirection,
+            throwDirection: correctedDirection,
             initialQuaternion: initialQuaternion.clone(),
             spiralRotation: 0,
-            spiralSpeed: spiralSpeed
+            spiralSpeed: spiralSpeed,
+            trajectoryLine: trajectoryLine
         });
         
         // Add a trail effect for the football
@@ -362,6 +393,46 @@ class Football {
         }, 10000);
     }
     
+    createTrajectoryLine(startPosition, direction, throwForce) {
+        // Create a line geometry for the trajectory
+        const trajectoryGeometry = new THREE.BufferGeometry();
+        const positions = [];
+        
+        // Calculate the trajectory points
+        for (let i = 0; i < 100; i++) {
+            const t = i / 10;
+            const x = startPosition.x + direction.x * throwForce * t;
+            const y = startPosition.y + direction.y * throwForce * t - 0.5 * 9.81 * t * t;
+            const z = startPosition.z + direction.z * throwForce * t;
+            
+            positions.push(x, y, z);
+            
+            // Stop if the ball hits the ground
+            if (y <= 0) {
+                break;
+            }
+        }
+        
+        // Set the positions attribute
+        trajectoryGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        
+        // Create a line material
+        const trajectoryMaterial = new THREE.LineBasicMaterial({ 
+            color: 0xFFFF00,
+            opacity: 0.7,
+            transparent: true,
+            linewidth: 2 // Make the line a bit thicker
+        });
+        
+        // Create the trajectory line
+        const trajectoryLine = new THREE.Line(trajectoryGeometry, trajectoryMaterial);
+        
+        // Add the trajectory line to the scene
+        this.scene.add(trajectoryLine);
+        
+        return trajectoryLine;
+    }
+    
     // Check if any thrown football is caught by the receiver
     checkCatch(receiverBody) {
         if (!this.thrownBalls || this.thrownBalls.length === 0) {
@@ -384,37 +455,34 @@ class Football {
     
     // Clean up old footballs that have been on the ground for a while
     cleanupOldFootballs() {
-        if (!this.thrownBalls || this.thrownBalls.length === 0) {
-            return;
-        }
-        
         const now = Date.now();
-        const ballsToRemove = [];
+        const footballsToRemove = [];
         
-        // Find balls that have been on the ground for more than 10 seconds
         this.thrownBalls.forEach((ball, index) => {
-            if (ball.body.position.y < 0.2 && now - ball.timeThrownAt > 10000) {
-                ballsToRemove.push(index);
+            // Check if the ball has been on the ground for more than 5 seconds
+            const velocity = ball.body.velocity.length();
+            const isOnGround = velocity < 0.1;
+            
+            if (isOnGround && now - ball.timeThrownAt > 5000) {
+                footballsToRemove.push(index);
             }
         });
         
-        // Remove the balls from the scene and physics world
-        for (let i = ballsToRemove.length - 1; i >= 0; i--) {
-            const index = ballsToRemove[i];
+        // Remove the footballs in reverse order to avoid index issues
+        for (let i = footballsToRemove.length - 1; i >= 0; i--) {
+            const index = footballsToRemove[i];
             const ball = this.thrownBalls[index];
             
-            // Clear any trail intervals
-            if (ball.mesh.userData.trailInterval) {
-                clearInterval(ball.mesh.userData.trailInterval);
-            }
-            
-            // Remove trail group if it exists
-            if (ball.mesh.userData.trailGroup) {
-                this.scene.remove(ball.mesh.userData.trailGroup);
-            }
-            
+            // Remove the ball from the scene and physics world
             this.scene.remove(ball.mesh);
             this.world.removeBody(ball.body);
+            
+            // Remove the trajectory line if it exists
+            if (ball.trajectoryLine) {
+                this.scene.remove(ball.trajectoryLine);
+            }
+            
+            // Remove the ball from the array
             this.thrownBalls.splice(index, 1);
         }
     }
