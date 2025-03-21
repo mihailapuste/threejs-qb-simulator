@@ -13,17 +13,37 @@ class Football {
     }
 
     init() {
-        // Create a football shape (ellipsoid)
-        // American football is more elongated along z-axis, but circular in x-y plane
-        const radiusX = 0.1;  // Same as radiusY for circular front profile
-        const radiusY = 0.1;  // Height
-        const radiusZ = 0.2;  // Length (elongated)
+        // Create a football shape (ellipsoid with pointed ends)
+        const radius = 0.1;  // Base radius for circular front profile
+        const length = 0.2;  // Length of the football
         
-        // Create football geometry - circular from front view, oval from top view
-        const footballGeometry = new THREE.SphereGeometry(radiusY, 32, 16);
+        // Create a custom geometry for the football with pointed ends
+        const footballGeometry = new THREE.SphereGeometry(radius, 32, 16);
         
-        // Scale the sphere to create the football shape
-        footballGeometry.scale(1.0, 1.0, 2.0); // Only stretch in Z direction
+        // Modify the vertices to create more pointed ends
+        const positions = footballGeometry.attributes.position;
+        
+        for (let i = 0; i < positions.count; i++) {
+            const x = positions.getX(i);
+            const y = positions.getY(i);
+            const z = positions.getZ(i);
+            
+            // Scale in z direction to create the elongated shape
+            const newZ = z * 2.0;
+            
+            // Apply a non-linear transformation to create more pointed ends
+            // This makes the ends of the football more pointed while keeping the middle full
+            const pointiness = 0.4; // Higher values make more pointed ends
+            const scaleFactor = 1.0 - pointiness * Math.pow(Math.abs(newZ) / length, 2);
+            
+            // Apply the transformation
+            positions.setX(i, x * scaleFactor);
+            positions.setY(i, y * scaleFactor);
+            positions.setZ(i, newZ);
+        }
+        
+        // Update the geometry
+        footballGeometry.computeVertexNormals();
         
         // Create football material
         const footballMaterial = new THREE.MeshStandardMaterial({
@@ -36,7 +56,7 @@ class Football {
         this.mesh.castShadow = true;
         
         // Add laces to the football (like in the image)
-        this.addLaces(this.mesh, radiusY);
+        this.addLaces(this.mesh, radius);
         
         // Position the football in hands
         this.positionInHands();
