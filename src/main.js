@@ -76,7 +76,7 @@ function togglePause() {
     pauseMenu.style.display = gameState.paused ? 'block' : 'none';
     
     if (gameState.paused) {
-        // Lock pointer when resuming
+        // Unlock pointer when pausing
         document.exitPointerLock();
     } else {
         // Request pointer lock when resuming
@@ -93,6 +93,8 @@ document.addEventListener('keydown', (event) => {
 
 document.getElementById('resume-button').addEventListener('click', () => {
     togglePause();
+    // Request pointer lock when clicking resume
+    renderer.domElement.requestPointerLock();
 });
 
 // Lighting

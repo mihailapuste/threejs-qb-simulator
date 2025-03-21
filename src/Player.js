@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FirstPersonControls } from 'three/examples/jsm/controls/FirstPersonControls.js';
+import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 
 class Player {
     constructor(camera, renderer) {
@@ -13,6 +13,15 @@ class Player {
         this.throwReleased = false;
         this.powerBar = document.getElementById('power-bar');
         
+        // Movement variables
+        this.moveForward = false;
+        this.moveBackward = false;
+        this.moveLeft = false;
+        this.moveRight = false;
+        this.velocity = new THREE.Vector3();
+        this.direction = new THREE.Vector3();
+        this.moveSpeed = 5.0;
+        
         this.init();
     }
 
@@ -20,28 +29,68 @@ class Player {
         // Set up camera for first person view
         this.camera.position.set(0, 1.7, 0); // Eye level
         
-        // Set up controls
-        this.controls = new FirstPersonControls(this.camera, this.renderer.domElement);
-        this.controls.movementSpeed = 5;
-        this.controls.lookSpeed = 0.1;
-        this.controls.lookVertical = true;
-        this.controls.constrainVertical = true;
-        this.controls.verticalMin = Math.PI / 4;
-        this.controls.verticalMax = Math.PI / 2;
+        // Set up controls - using PointerLockControls instead of FirstPersonControls
+        this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
         
         // Add event listeners for throwing
         document.addEventListener('mousedown', this.startThrow.bind(this));
         document.addEventListener('mouseup', this.endThrow.bind(this));
         
-        // Disable the default click behavior of FirstPersonControls
-        this.renderer.domElement.addEventListener('click', (e) => {
-            e.stopPropagation();
+        // Add event listeners for keyboard movement
+        document.addEventListener('keydown', this.onKeyDown.bind(this));
+        document.addEventListener('keyup', this.onKeyUp.bind(this));
+        
+        // Lock pointer on click
+        this.renderer.domElement.addEventListener('click', () => {
+            this.controls.lock();
         });
+    }
+    
+    onKeyDown(event) {
+        switch (event.code) {
+            case 'ArrowUp':
+            case 'KeyW':
+                this.moveForward = true;
+                break;
+            case 'ArrowLeft':
+            case 'KeyA':
+                this.moveLeft = true;
+                break;
+            case 'ArrowDown':
+            case 'KeyS':
+                this.moveBackward = true;
+                break;
+            case 'ArrowRight':
+            case 'KeyD':
+                this.moveRight = true;
+                break;
+        }
+    }
+    
+    onKeyUp(event) {
+        switch (event.code) {
+            case 'ArrowUp':
+            case 'KeyW':
+                this.moveForward = false;
+                break;
+            case 'ArrowLeft':
+            case 'KeyA':
+                this.moveLeft = false;
+                break;
+            case 'ArrowDown':
+            case 'KeyS':
+                this.moveBackward = false;
+                break;
+            case 'ArrowRight':
+            case 'KeyD':
+                this.moveRight = false;
+                break;
+        }
     }
 
     startThrow(event) {
-        // Only react to left mouse button
-        if (event.button === 0) {
+        // Only react to left mouse button and when pointer is locked
+        if (event.button === 0 && this.controls.isLocked) {
             this.throwing = true;
             this.throwPower = 0;
             this.throwReleased = false;
@@ -89,15 +138,35 @@ class Player {
     }
 
     update(delta) {
-        // Update controls
-        this.controls.update(delta);
+        // Only update movement when controls are locked
+        if (this.controls.isLocked) {
+            // Calculate velocity based on key presses
+            this.velocity.x = 0;
+            this.velocity.z = 0;
+            
+            this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
+            this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
+            this.direction.normalize();
+            
+            // Move in the direction the camera is facing
+            if (this.moveForward || this.moveBackward) {
+                this.velocity.z = this.direction.z * this.moveSpeed * delta;
+            }
+            if (this.moveLeft || this.moveRight) {
+                this.velocity.x = this.direction.x * this.moveSpeed * delta;
+            }
+            
+            // Apply movement
+            this.controls.moveRight(this.velocity.x);
+            this.controls.moveForward(this.velocity.z);
+        }
         
         // Update throw power
         this.updateThrowPower();
     }
 
     handleResize() {
-        this.controls.handleResize();
+        // No need to handle resize with PointerLockControls
     }
 }
 
