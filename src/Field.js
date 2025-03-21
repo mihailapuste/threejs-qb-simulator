@@ -13,12 +13,12 @@ class Field {
     }
 
     init() {
-        // Create field mesh
-        const fieldGeometry = new THREE.PlaneGeometry(120, 53.3); // NFL field dimensions in yards
+        // Create field mesh - NCAA field dimensions (120 yards x 53.3 yards)
+        const fieldGeometry = new THREE.PlaneGeometry(120, 53.3);
         const fieldMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x355E3B,  // Field green
+            color: 0x2E5A35,  // Darker field green
             roughness: 0.8,
-            emissive: 0x112211, // Slight emissive glow to make it more visible
+            emissive: 0x112211,
             emissiveIntensity: 0.1
         });
         this.field = new THREE.Mesh(fieldGeometry, fieldMaterial);
@@ -34,28 +34,34 @@ class Field {
         this.fieldBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
         this.world.addBody(this.fieldBody);
         
-        this.addYardLines();
+        // Add all field markings in the correct order
         this.addEndZones();
+        this.addYardLines();
+        this.addHashMarks();
+        this.addGoalPosts();
         this.addReceiver();
     }
 
     addYardLines() {
-        // Add yard lines
-        for (let i = 0; i <= 100; i += 10) {
-            const lineGeometry = new THREE.BoxGeometry(0.2, 0.01, 53.3);
-            const lineMaterial = new THREE.MeshStandardMaterial({ 
-                color: 0xFFFFFF,
-                emissive: 0xFFFFFF,
-                emissiveIntensity: 0.2
-            });
-            const line = new THREE.Mesh(lineGeometry, lineMaterial);
-            line.position.set(i - 50, 0.01, 0);
-            this.scene.add(line);
+        // Add yard lines every 5 yards (4 inches wide, white)
+        for (let i = 0; i <= 100; i += 5) {
+            // Only make 5-yard lines visible
+            if (i % 5 === 0) {
+                const lineGeometry = new THREE.BoxGeometry(0.1, 0.01, 53.3); // 4 inches wide (0.1 yards)
+                const lineMaterial = new THREE.MeshStandardMaterial({ 
+                    color: 0xFFFFFF,
+                    emissive: 0xFFFFFF,
+                    emissiveIntensity: 0.2
+                });
+                const line = new THREE.Mesh(lineGeometry, lineMaterial);
+                line.position.set(i - 50, 0.01, 0);
+                this.scene.add(line);
+            }
         }
         
         // Add yard numbers in NFL style (G, 10, 20, 30, 40, 50, 40, 30, 20, 10, G)
+        // But upside down on one side to match the reference image
         const yardMarkers = [
-            { position: -50, text: "G" },  // Goal line
             { position: -40, text: "10" }, // 10 yard line
             { position: -30, text: "20" }, // 20 yard line
             { position: -20, text: "30" }, // 30 yard line
@@ -64,14 +70,11 @@ class Field {
             { position: 10, text: "40" },  // 40 yard line (other side)
             { position: 20, text: "30" },  // 30 yard line (other side)
             { position: 30, text: "20" },  // 20 yard line (other side)
-            { position: 40, text: "10" },  // 10 yard line (other side)
-            { position: 50, text: "G" }    // Goal line (other side)
+            { position: 40, text: "10" }   // 10 yard line (other side)
         ];
         
         yardMarkers.forEach(marker => {
-            // Skip the 50 yard line if desired
-            // if (marker.position === 0) return;
-            
+            // Create upside-down numbers for the top of the field (as seen in the reference image)
             const yardNumber = document.createElement('canvas');
             yardNumber.width = 128;
             yardNumber.height = 128;
@@ -89,49 +92,96 @@ class Field {
                 side: THREE.DoubleSide
             });
             
+            // Numbers should be properly sized and positioned
             const numberGeometry = new THREE.PlaneGeometry(3, 3);
-            const numberMesh = new THREE.Mesh(numberGeometry, numberMaterial);
             
-            // Position the number on the field
-            numberMesh.rotation.x = -Math.PI / 2;
-            numberMesh.position.set(marker.position, 0.02, 15); // On one side
-            this.scene.add(numberMesh);
+            // Top row of numbers (upside down in the reference image)
+            const topNumberMesh = new THREE.Mesh(numberGeometry, numberMaterial);
+            topNumberMesh.rotation.x = -Math.PI / 2;
+            topNumberMesh.rotation.z = Math.PI; // Upside down
+            topNumberMesh.position.set(marker.position, 0.02, -15);
+            this.scene.add(topNumberMesh);
             
-            // Add another on the opposite side
-            const numberMesh2 = numberMesh.clone();
-            numberMesh2.position.set(marker.position, 0.02, -15);
-            numberMesh2.rotation.z = Math.PI; // Rotate 180 degrees so it's readable from the other side
-            this.scene.add(numberMesh2);
+            // Bottom row of numbers (right side up)
+            const bottomNumberMesh = new THREE.Mesh(numberGeometry, numberMaterial);
+            bottomNumberMesh.rotation.x = -Math.PI / 2;
+            bottomNumberMesh.position.set(marker.position, 0.02, 15);
+            this.scene.add(bottomNumberMesh);
         });
     }
     
+    addHashMarks() {
+        // Add hash marks every yard - in reference image, there are many small hash marks
+        for (let i = 0; i <= 100; i += 1) {
+            // Create small hash marks on both sides of each yard line
+            const hashGeometry = new THREE.BoxGeometry(0.1, 0.01, 0.5); // Smaller hash marks
+            const hashMaterial = new THREE.MeshStandardMaterial({ color: 0xFFFFFF });
+            
+            // Top side hash marks (closer to top sideline)
+            const topHash = new THREE.Mesh(hashGeometry, hashMaterial);
+            topHash.position.set(i - 50, 0.01, -10); // Positioned to match reference
+            this.scene.add(topHash);
+            
+            // Bottom side hash marks (closer to bottom sideline)
+            const bottomHash = new THREE.Mesh(hashGeometry, hashMaterial);
+            bottomHash.position.set(i - 50, 0.01, 10); // Positioned to match reference
+            this.scene.add(bottomHash);
+        }
+    }
+    
     addEndZones() {
-        // Add end zones (red and blue)
+        // Add end zones (10 yards deep at each end of the field)
         const endZoneGeometry = new THREE.PlaneGeometry(10, 53.3);
         
-        // Red end zone
-        const redEndZoneMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0xCC0000,
+        // Dark end zones (almost black with a hint of color)
+        const endZoneMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x222222,
             roughness: 0.8,
-            emissive: 0x330000,
+            emissive: 0x111111,
             emissiveIntensity: 0.1
         });
-        const redEndZone = new THREE.Mesh(endZoneGeometry, redEndZoneMaterial);
-        redEndZone.rotation.x = -Math.PI / 2;
-        redEndZone.position.set(-55, 0.01, 0);
-        this.scene.add(redEndZone);
         
-        // Blue end zone
-        const blueEndZoneMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x0000CC,
-            roughness: 0.8,
-            emissive: 0x000033,
-            emissiveIntensity: 0.1
+        // Left end zone
+        const leftEndZone = new THREE.Mesh(endZoneGeometry, endZoneMaterial);
+        leftEndZone.rotation.x = -Math.PI / 2;
+        leftEndZone.position.set(-55, 0.01, 0);
+        this.scene.add(leftEndZone);
+        
+        // Right end zone
+        const rightEndZone = new THREE.Mesh(endZoneGeometry, endZoneMaterial);
+        rightEndZone.rotation.x = -Math.PI / 2;
+        rightEndZone.position.set(55, 0.01, 0);
+        this.scene.add(rightEndZone);
+        
+        // Add "FORZA" text in both end zones (rotated 90 degrees to match image)
+        this.addEndZoneText("FORZA", -55, 0xFFFFFF, Math.PI/2);
+        this.addEndZoneText("FORZA", 55, 0xFFFFFF, -Math.PI/2);
+    }
+    
+    addEndZoneText(text, position, color, rotation = 0) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 128;
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#' + color.toString(16).padStart(6, '0');
+        context.font = 'bold 96px Arial';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillText(text, 256, 64);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.MeshBasicMaterial({ 
+            map: texture,
+            transparent: true,
+            side: THREE.DoubleSide
         });
-        const blueEndZone = new THREE.Mesh(endZoneGeometry, blueEndZoneMaterial);
-        blueEndZone.rotation.x = -Math.PI / 2;
-        blueEndZone.position.set(55, 0.01, 0);
-        this.scene.add(blueEndZone);
+        
+        const geometry = new THREE.PlaneGeometry(20, 5);
+        const textMesh = new THREE.Mesh(geometry, material);
+        textMesh.rotation.x = -Math.PI / 2;
+        textMesh.rotation.z = rotation; // Apply rotation
+        textMesh.position.set(position, 0.02, 0);
+        this.scene.add(textMesh);
     }
 
     addReceiver() {
@@ -175,6 +225,28 @@ class Field {
         }
         return false;
     }
+
+    addGoalPosts() {
+        // Add simple goal posts at each end of the field
+        const postMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xFFFFFF,
+            emissive: 0xFFFFFF,
+            emissiveIntensity: 0.2
+        });
+        
+        // Create left goal post (simple upright)
+        const leftPostGeometry = new THREE.CylinderGeometry(0.1, 0.1, 10, 8);
+        const leftPost = new THREE.Mesh(leftPostGeometry, postMaterial);
+        leftPost.position.set(-55, 5, 0);
+        this.scene.add(leftPost);
+        
+        // Create right goal post (simple upright)
+        const rightPostGeometry = new THREE.CylinderGeometry(0.1, 0.1, 10, 8);
+        const rightPost = new THREE.Mesh(rightPostGeometry, postMaterial);
+        rightPost.position.set(55, 5, 0);
+        this.scene.add(rightPost);
+    }
+
 }
 
 export default Field;
