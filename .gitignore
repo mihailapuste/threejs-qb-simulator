@@ -1,0 +1,17 @@
+/node_modules
+
+# Editor config
+.idea
+.vscode
+
+# Build output
+build
+
+# Other
+.env
+.env.local
+.env.example
+
+# Temporary files
+.DS_Store
+Thumbs.db
