@@ -220,16 +220,37 @@ class Field {
         }
     }
     
-    startReceiverRoute() {
+    startReceiverRoute(routeName = null) {
         if (this.receiver) {
-            this.receiver.startRoute();
+            return this.receiver.startRoute(routeName);
         }
+    }
+    
+    getReceiverRoutes() {
+        if (this.receiver) {
+            return this.receiver.getAvailableRoutes();
+        }
+        return [];
+    }
+    
+    getCurrentReceiverRoute() {
+        if (this.receiver) {
+            return this.receiver.getCurrentRoute();
+        }
+        return null;
     }
     
     resetReceiver() {
         if (this.receiver) {
             this.receiver.reset();
         }
+    }
+
+    getReceiverCatchCount() {
+        if (this.receiver) {
+            return this.receiver.getCatchCount();
+        }
+        return 0;
     }
 
 }

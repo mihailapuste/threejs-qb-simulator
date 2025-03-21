@@ -10,6 +10,25 @@ class Receiver {
         this.running = false;
         this.speed = 4; // yards per second
         this.catchCount = 0;
+        this.currentRoute = 'seam'; // Default route
+        this.routeStep = 0; // Current step in the route
+        this.routeTarget = null; // Target position for current route step
+        
+        // Define available routes
+        this.routes = {
+            'seam': [
+                { x: 50, z: 10 } // Straight up the field
+            ],
+            'out': [
+                { x: (40 - 50) + 6, z: 10 }, // 6 yards up
+                { x: (40 - 50) + 6, z: 26.65 } // Out to the sideline
+            ],
+            'slant': [
+                { x: (40 - 50) + 3, z: 10 }, // 3 yards up
+                { x: 50, z: 0 } // 40° angle towards the middle
+            ]
+        };
+        
         this.init();
     }
 
@@ -72,37 +91,77 @@ class Receiver {
     update(deltaTime) {
         // Update receiver position if running
         if (this.running && this.mesh && this.body) {
-            // Move receiver forward (in positive x direction) at speed
-            const moveDistance = this.speed * deltaTime;
+            // If we don't have a current target, set it to the first step of the route
+            if (!this.routeTarget && this.routes[this.currentRoute] && this.routeStep < this.routes[this.currentRoute].length) {
+                this.routeTarget = this.routes[this.currentRoute][this.routeStep];
+            }
             
-            // Update mesh position
-            this.mesh.position.x += moveDistance;
-            
-            // Update physics body position
-            this.body.position.x += moveDistance;
-            
-            // Stop the receiver if they reach the end zone
-            if (this.mesh.position.x > 50) {
-                this.running = false;
+            // If we have a target, move towards it
+            if (this.routeTarget) {
+                // Calculate direction to target
+                const targetX = this.routeTarget.x;
+                const targetZ = this.routeTarget.z;
+                const dirX = targetX - this.mesh.position.x;
+                const dirZ = targetZ - this.mesh.position.z;
                 
-                // Celebrate the touchdown
-                if (this.mesh.material) {
-                    this.mesh.material.emissive = new THREE.Color(0xFFFF00);
-                    this.mesh.material.emissiveIntensity = 0.5;
+                // Normalize direction
+                const length = Math.sqrt(dirX * dirX + dirZ * dirZ);
+                
+                // If we're close enough to the target, move to the next step
+                if (length < 0.5) {
+                    this.routeStep++;
+                    if (this.routeStep < this.routes[this.currentRoute].length) {
+                        this.routeTarget = this.routes[this.currentRoute][this.routeStep];
+                    } else {
+                        // End of route, celebrate if in end zone
+                        if (this.mesh.position.x > 45) {
+                            this.celebrate();
+                        }
+                        this.routeTarget = null;
+                        this.running = false;
+                    }
+                } else {
+                    // Move towards target
+                    const moveDistance = this.speed * deltaTime;
+                    const moveX = (dirX / length) * moveDistance;
+                    const moveZ = (dirZ / length) * moveDistance;
                     
-                    // Reset emissive after 2 seconds
-                    setTimeout(() => {
-                        this.mesh.material.emissive = new THREE.Color(0x000000);
-                        this.mesh.material.emissiveIntensity = 0;
-                    }, 2000);
+                    // Update mesh position
+                    this.mesh.position.x += moveX;
+                    this.mesh.position.z += moveZ;
+                    
+                    // Update physics body position
+                    this.body.position.x += moveX;
+                    this.body.position.z += moveZ;
+                    
+                    // Make receiver face the direction of movement
+                    if (length > 0.1) {
+                        this.mesh.rotation.y = Math.atan2(moveX, moveZ);
+                    }
                 }
             }
         }
     }
     
+    celebrate() {
+        // Celebrate the touchdown
+        if (this.mesh.material) {
+            this.mesh.material.emissive = new THREE.Color(0xFFFF00);
+            this.mesh.material.emissiveIntensity = 0.5;
+            
+            // Reset emissive after 2 seconds
+            setTimeout(() => {
+                this.mesh.material.emissive = new THREE.Color(0x000000);
+                this.mesh.material.emissiveIntensity = 0;
+            }, 2000);
+        }
+    }
+    
     checkCatch(footballBody) {
+        console.log("Checking for catch...");
         if (footballBody && this.body) {
             const distance = footballBody.position.distanceTo(this.body.position);
+            console.log(`Distance to football: ${distance}`);
             if (distance < 0.5) { // 0.5 meters catch radius
                 // Highlight the receiver to indicate a catch
                 if (this.mesh.material) {
@@ -123,7 +182,16 @@ class Receiver {
         return false;
     }
     
-    startRoute() {
+    startRoute(routeName = null) {
+        // Set the route if provided
+        if (routeName && this.routes[routeName]) {
+            this.currentRoute = routeName;
+        }
+        
+        // Reset route step and target
+        this.routeStep = 0;
+        this.routeTarget = null;
+        
         // Start the receiver running
         this.running = true;
         
@@ -138,6 +206,8 @@ class Receiver {
                 this.mesh.material.emissiveIntensity = 0;
             }, 500);
         }
+        
+        return this.currentRoute;
     }
     
     reset() {
@@ -146,9 +216,16 @@ class Receiver {
             // Stop running
             this.running = false;
             
+            // Reset route step and target
+            this.routeStep = 0;
+            this.routeTarget = null;
+            
             // Reset position to 40 yard line
             this.mesh.position.set(40 - 50, 0.9, 10);
             this.body.position.set(40 - 50, 0.9, 10);
+            
+            // Reset rotation
+            this.mesh.rotation.set(0, 0, 0);
             
             // Reset any visual effects
             if (this.mesh.material) {
@@ -160,6 +237,14 @@ class Receiver {
     
     getCatchCount() {
         return this.catchCount;
+    }
+    
+    getAvailableRoutes() {
+        return Object.keys(this.routes);
+    }
+    
+    getCurrentRoute() {
+        return this.currentRoute;
     }
 }
 

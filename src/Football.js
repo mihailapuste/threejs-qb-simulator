@@ -288,11 +288,11 @@ class Football {
                     
                     // Check for catch with the receiver if ball is in flight
                     if (!ball.caught && !ball.landed && this.field && this.field.receiver) {
-                        // Check if the ball is close to the receiver
+                        console.log("Checking if ball is close to receiver...");
                         const catchResult = this.field.checkCatch(ball.body);
                         if (catchResult) {
                             ball.caught = true;
-                            console.log("Catch made!");
+                            console.log("Catch made in Football.js!");
                             
                             // Stop the ball's physics
                             ball.body.velocity.set(0, 0, 0);

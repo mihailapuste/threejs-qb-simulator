@@ -139,8 +139,40 @@ controlsInfo.innerHTML = `
     <p>Q: Get new football</p>
     <p>E: Start receiver route</p>
     <p>R: Reset receiver</p>
+    <p>T: Open route selection menu</p>
 `;
 document.getElementById('game-container').appendChild(controlsInfo);
+
+// Create route menu
+const routeMenu = document.createElement('div');
+routeMenu.id = 'route-menu';
+routeMenu.style.position = 'absolute';
+routeMenu.style.top = '20px';
+routeMenu.style.left = '20px';
+routeMenu.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+routeMenu.style.color = 'white';
+routeMenu.style.padding = '15px';
+routeMenu.style.borderRadius = '5px';
+routeMenu.style.zIndex = '100';
+routeMenu.style.minWidth = '200px';
+routeMenu.style.display = 'none'; // Hidden by default
+document.getElementById('game-container').appendChild(routeMenu);
+
+// Create route display
+const routeDisplay = document.createElement('div');
+routeDisplay.id = 'route-display';
+routeDisplay.style.position = 'absolute';
+routeDisplay.style.top = '100px';
+routeDisplay.style.right = '20px';
+routeDisplay.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+routeDisplay.style.color = 'white';
+routeDisplay.style.padding = '10px';
+routeDisplay.style.borderRadius = '5px';
+routeDisplay.style.zIndex = '100';
+routeDisplay.style.fontSize = '18px';
+routeDisplay.style.fontWeight = 'bold';
+routeDisplay.innerHTML = 'Route: Seam';
+document.getElementById('game-container').appendChild(routeDisplay);
 
 // Pause menu
 const pauseMenu = document.createElement('div');
@@ -185,6 +217,68 @@ const world = new CANNON.World({
 // Game objects
 let player, field, football;
 
+// Function to update route menu
+function updateRouteMenu() {
+    if (!field || !field.receiver) return;
+    
+    const routes = field.getReceiverRoutes();
+    const currentRoute = field.getCurrentReceiverRoute();
+    
+    let menuHTML = `
+        <h3>Route Selection</h3>
+        <ul style="list-style-type: none; padding: 0; margin: 0;">
+    `;
+    
+    routes.forEach(route => {
+        const isSelected = route === currentRoute;
+        const style = isSelected ? 
+            'background-color: #3498db; color: white; font-weight: bold;' : 
+            'background-color: #2c3e50;';
+        
+        menuHTML += `
+            <li style="padding: 8px; margin: 5px 0; border-radius: 3px; cursor: pointer; ${style}" 
+                onclick="selectRoute('${route}')">
+                ${route.charAt(0).toUpperCase() + route.slice(1)}
+            </li>
+        `;
+    });
+    
+    menuHTML += `
+        </ul>
+        <div style="margin-top: 10px; text-align: center;">
+            <button style="padding: 8px 15px; background-color: #27ae60; border: none; color: white; border-radius: 3px; cursor: pointer;" 
+                onclick="closeRouteMenu()">Close</button>
+        </div>
+    `;
+    
+    routeMenu.innerHTML = menuHTML;
+}
+
+// Route menu functions
+function openRouteMenu() {
+    updateRouteMenu();
+    routeMenu.style.display = 'block';
+    gameState.paused = true; // Pause the game while menu is open
+}
+
+function closeRouteMenu() {
+    routeMenu.style.display = 'none';
+    gameState.paused = false; // Resume the game
+}
+
+function selectRoute(routeName) {
+    if (field) {
+        field.startReceiverRoute(routeName);
+        closeRouteMenu();
+        routeDisplay.innerHTML = `Route: ${routeName.charAt(0).toUpperCase() + routeName.slice(1)}`;
+    }
+}
+
+// Make these functions available globally
+window.openRouteMenu = openRouteMenu;
+window.closeRouteMenu = closeRouteMenu;
+window.selectRoute = selectRoute;
+
 // Pause/resume functionality
 function togglePause() {
     gameState.paused = !gameState.paused;
@@ -205,12 +299,17 @@ document.addEventListener('keydown', (event) => {
         togglePause();
     } else if (event.key === 'e' || event.key === 'E') {
         // Start receiver route on E key
-        field.startReceiverRoute();
+        const currentRoute = field.startReceiverRoute();
+        routeDisplay.innerHTML = `Route: ${currentRoute.charAt(0).toUpperCase() + currentRoute.slice(1)}`;
         console.log("Receiver running route");
     } else if (event.key === 'r' || event.key === 'R') {
         // Reset receiver on R key
         field.resetReceiver();
         console.log("Receiver reset");
+    } else if (event.key === 't' || event.key === 'T') {
+        // Open route selection menu on T key
+        openRouteMenu();
+        console.log("Route menu opened");
     }
 });
 
@@ -268,6 +367,14 @@ function init() {
     // Hide loading screen
     loadingScreen.style.display = 'none';
     
+    // Initialize route display with default route
+    if (field && field.receiver) {
+        const currentRoute = field.getCurrentReceiverRoute();
+        if (currentRoute) {
+            routeDisplay.innerHTML = `Route: ${currentRoute.charAt(0).toUpperCase() + currentRoute.slice(1)}`;
+        }
+    }
+    
     // Event listeners
     window.addEventListener('resize', onWindowResize);
     // Note: Player class already sets up its own event listeners
@@ -324,9 +431,7 @@ function animate() {
     field.update(delta);
     
     // Update catch counter display
-    if (field.receiver) {
-        catchCounter.innerHTML = `Catches: ${field.receiver.getCatchCount()}`;
-    }
+    catchCounter.innerHTML = `Catches: ${field.getReceiverCatchCount()}`;
     
     // Check if player is throwing
     const throwData = player.getThrowData();
