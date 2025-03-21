@@ -67,6 +67,18 @@ class Football {
             this.thrownBalls.forEach(ball => {
                 ball.mesh.position.copy(ball.body.position);
                 ball.mesh.quaternion.copy(ball.body.quaternion);
+                
+                // Update spiral rotation for thrown balls
+                if (ball.spiralAxis && !ball.caught) {
+                    ball.spiralRotation += ball.spiralSpeed;
+                    
+                    // Create a rotation quaternion for the spiral
+                    const spiralQuaternion = new THREE.Quaternion();
+                    spiralQuaternion.setFromAxisAngle(ball.spiralAxis, ball.spiralRotation);
+                    
+                    // Combine with the physics quaternion
+                    ball.mesh.quaternion.multiply(spiralQuaternion);
+                }
             });
         }
         
@@ -109,27 +121,32 @@ class Football {
         this.world.addBody(thrownBody);
         
         // Apply force to throw the football
-        const throwForce = 20 * (power / 100); // Increased force for better throws
+        const throwForce = 25 * (power / 100); // Increased force for better throws
         thrownBody.velocity.set(
             direction.x * throwForce,
             direction.y * throwForce,
             direction.z * throwForce
         );
         
-        // Add some spin to the ball
-        thrownBody.angularVelocity.set(
-            -direction.z * 10,
-            0,
-            direction.x * 10
-        );
+        // Create a spiral axis aligned with the direction of throw
+        const spiralAxis = new THREE.Vector3().copy(direction);
+        
+        // Calculate spiral speed based on throw power
+        const spiralSpeed = 0.2 + (power / 100) * 0.3; // 0.2 to 0.5 radians per frame
         
         // Add the thrown football to the list of thrown balls
         this.thrownBalls.push({
             mesh: thrownFootball,
             body: thrownBody,
             timeThrownAt: Date.now(),
-            caught: false
+            caught: false,
+            spiralAxis: spiralAxis,
+            spiralRotation: 0,
+            spiralSpeed: spiralSpeed
         });
+        
+        // Add a trail effect for the football
+        this.addTrailEffect(thrownFootball);
         
         // Keep only the last 10 thrown footballs to manage memory
         if (this.thrownBalls.length > 10) {
@@ -137,6 +154,61 @@ class Football {
             this.scene.remove(oldestBall.mesh);
             this.world.removeBody(oldestBall.body);
         }
+    }
+    
+    addTrailEffect(footballMesh) {
+        // Create a trail effect using small spheres
+        const trailGroup = new THREE.Group();
+        this.scene.add(trailGroup);
+        
+        // Store the trail group in the football mesh for later cleanup
+        footballMesh.userData.trailGroup = trailGroup;
+        
+        // Create a function to update the trail
+        const updateTrail = () => {
+            // Create a new trail point
+            const trailPoint = new THREE.Mesh(
+                new THREE.SphereGeometry(0.02, 8, 8),
+                new THREE.MeshBasicMaterial({ 
+                    color: 0xFFFFFF,
+                    transparent: true,
+                    opacity: 0.7
+                })
+            );
+            
+            // Position the trail point at the football's current position
+            trailPoint.position.copy(footballMesh.position);
+            
+            // Add the trail point to the trail group
+            trailGroup.add(trailPoint);
+            
+            // Fade out and remove old trail points
+            trailGroup.children.forEach((point, index) => {
+                point.material.opacity -= 0.05;
+                
+                if (point.material.opacity <= 0) {
+                    trailGroup.remove(point);
+                }
+            });
+            
+            // Limit the number of trail points
+            if (trailGroup.children.length > 20) {
+                const oldestPoint = trailGroup.children[0];
+                trailGroup.remove(oldestPoint);
+            }
+        };
+        
+        // Update the trail every few frames
+        const trailInterval = setInterval(updateTrail, 50);
+        
+        // Store the interval ID for cleanup
+        footballMesh.userData.trailInterval = trailInterval;
+        
+        // Clean up the trail after 10 seconds
+        setTimeout(() => {
+            clearInterval(trailInterval);
+            this.scene.remove(trailGroup);
+        }, 10000);
     }
     
     // Check if any thrown football is caught by the receiver
@@ -179,6 +251,16 @@ class Football {
         for (let i = ballsToRemove.length - 1; i >= 0; i--) {
             const index = ballsToRemove[i];
             const ball = this.thrownBalls[index];
+            
+            // Clear any trail intervals
+            if (ball.mesh.userData.trailInterval) {
+                clearInterval(ball.mesh.userData.trailInterval);
+            }
+            
+            // Remove trail group if it exists
+            if (ball.mesh.userData.trailGroup) {
+                this.scene.remove(ball.mesh.userData.trailGroup);
+            }
             
             this.scene.remove(ball.mesh);
             this.world.removeBody(ball.body);
