@@ -38,12 +38,41 @@ crosshair.style.transform = 'translate(-50%, -50%)';
 crosshair.style.zIndex = '100';
 crosshair.style.pointerEvents = 'none'; // Ensure it doesn't interfere with clicks
 
-// Create crosshair elements with IDs for easy access
+// Add CSS animation for the crosshair
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes pulse {
+        0% { opacity: 0.8; }
+        50% { opacity: 1; }
+        100% { opacity: 0.8; }
+    }
+    
+    #crosshair-circle {
+        animation: pulse 2s infinite ease-in-out;
+        transition: all 0.2s ease-out;
+    }
+`;
+document.head.appendChild(style);
+
+// Create a circular crosshair
 crosshair.innerHTML = `
-    <div style="position: relative; width: 20px; height: 20px;">
-        <div id="crosshair-horizontal" style="position: absolute; top: 9px; left: 0; width: 20px; height: 2px; background-color: white;"></div>
-        <div id="crosshair-vertical" style="position: absolute; top: 0; left: 9px; width: 2px; height: 20px; background-color: white;"></div>
-        <div id="crosshair-center" style="position: absolute; top: 8px; left: 8px; width: 4px; height: 4px; border-radius: 50%; border: 1px solid white;"></div>
+    <div id="crosshair-circle" style="
+        width: 40px;
+        height: 40px;
+        border: 2px solid white;
+        border-radius: 50%;
+        position: relative;
+    ">
+        <div id="crosshair-dot" style="
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background-color: white;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        "></div>
     </div>
 `;
 document.getElementById('game-container').appendChild(crosshair);
@@ -274,17 +303,26 @@ function animate() {
         const power = player.getThrowPower();
         const color = getColorForPower(power);
         
-        document.getElementById('crosshair-horizontal').style.backgroundColor = color;
-        document.getElementById('crosshair-vertical').style.backgroundColor = color;
-        document.getElementById('crosshair-center').style.borderColor = color;
+        // Update crosshair color
+        document.getElementById('crosshair-circle').style.borderColor = color;
+        document.getElementById('crosshair-dot').style.backgroundColor = color;
+        
+        // Shrink the crosshair as power increases (more focused aim)
+        const minSize = 20; // Minimum size at full power
+        const maxSize = 40; // Maximum size at no power
+        const size = maxSize - (power * (maxSize - minSize));
+        
+        document.getElementById('crosshair-circle').style.width = `${size}px`;
+        document.getElementById('crosshair-circle').style.height = `${size}px`;
     } else {
         // Hide power indicator
         throwPowerIndicator.style.display = 'none';
         
-        // Reset crosshair color
-        document.getElementById('crosshair-horizontal').style.backgroundColor = 'white';
-        document.getElementById('crosshair-vertical').style.backgroundColor = 'white';
-        document.getElementById('crosshair-center').style.borderColor = 'white';
+        // Reset crosshair color and size
+        document.getElementById('crosshair-circle').style.borderColor = 'white';
+        document.getElementById('crosshair-dot').style.backgroundColor = 'white';
+        document.getElementById('crosshair-circle').style.width = '40px';
+        document.getElementById('crosshair-circle').style.height = '40px';
     }
     
     // Check if receiver caught the ball
