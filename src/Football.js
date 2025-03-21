@@ -49,7 +49,7 @@ class Football {
         
         // Create a single lace - length of the football
         const radiusZ = 0.2; // Length of football (from init method)
-        const laceLength = radiusZ * 0.8; // 80% of football length to follow curvature better
+        const laceLength = radiusZ * 0.7; // 80% of football length to follow curvature better
         const laceWidth = 0.03; // Narrower lace
         
         // Create a curved path for the lace to follow the football's elliptical shape
@@ -83,7 +83,7 @@ class Football {
         // Add stitches to make the lace more visible
         const stitchMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
         const stitchWidth = 0.0025;
-        const stitchHeight = 0.005;
+        const stitchHeight = 0.0015; // Reduced from 0.005 to 0.0025 (half height)
         const stitchDepth = 0.015;
         const numStitches = 8;
         
