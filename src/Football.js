@@ -2,10 +2,11 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
 class Football {
-    constructor(scene, world, camera) {
+    constructor(scene, world, camera, field) {
         this.scene = scene;
         this.world = world;
         this.camera = camera;
+        this.field = field;
         this.mesh = null;
         this.body = null;
         this.thrownBalls = [];
@@ -284,6 +285,26 @@ class Football {
                     // Normal physics update for non-animating balls
                     // Update position from physics
                     ball.mesh.position.copy(ball.body.position);
+                    
+                    // Check for catch with the receiver if ball is in flight
+                    if (!ball.caught && !ball.landed && this.field && this.field.receiver) {
+                        // Check if the ball is close to the receiver
+                        const catchResult = this.field.checkCatch(ball.body);
+                        if (catchResult) {
+                            ball.caught = true;
+                            console.log("Catch made!");
+                            
+                            // Stop the ball's physics
+                            ball.body.velocity.set(0, 0, 0);
+                            ball.body.angularVelocity.set(0, 0, 0);
+                            
+                            // Create a new football for the player's hands
+                            if (this.needNewFootball && this.mesh === null) {
+                                this.createNewFootballForHands();
+                                this.needNewFootball = false;
+                            }
+                        }
+                    }
                     
                     // Only update orientation if not caught and still moving
                     if (!ball.caught && ball.body.velocity.length() > 0.1) {

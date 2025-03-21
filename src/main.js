@@ -8,7 +8,8 @@ import Football from './Football.js';
 const gameState = {
     receiverCaught: false,
     paused: false,
-    score: 0
+    score: 0,
+    catches: 0
 };
 
 // DOM elements
@@ -27,6 +28,22 @@ scoreDisplay.style.borderRadius = '5px';
 scoreDisplay.style.zIndex = '100';
 scoreDisplay.innerHTML = 'Score: 0';
 document.getElementById('game-container').appendChild(scoreDisplay);
+
+// Create catch counter display
+const catchCounter = document.createElement('div');
+catchCounter.id = 'catch-counter';
+catchCounter.style.position = 'absolute';
+catchCounter.style.top = '60px';
+catchCounter.style.right = '20px';
+catchCounter.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+catchCounter.style.color = 'white';
+catchCounter.style.padding = '10px';
+catchCounter.style.borderRadius = '5px';
+catchCounter.style.zIndex = '100';
+catchCounter.style.fontSize = '24px';
+catchCounter.style.fontWeight = 'bold';
+catchCounter.innerHTML = 'Catches: 0';
+document.getElementById('game-container').appendChild(catchCounter);
 
 // Create crosshair
 const crosshair = document.createElement('div');
@@ -120,6 +137,8 @@ controlsInfo.innerHTML = `
     <p>Spacebar: Throw (hold to charge)</p>
     <p>ESC: Pause game</p>
     <p>Q: Get new football</p>
+    <p>E: Start receiver route</p>
+    <p>R: Reset receiver</p>
 `;
 document.getElementById('game-container').appendChild(controlsInfo);
 
@@ -184,6 +203,14 @@ function togglePause() {
 document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
         togglePause();
+    } else if (event.key === 'e' || event.key === 'E') {
+        // Start receiver route on E key
+        field.startReceiverRoute();
+        console.log("Receiver running route");
+    } else if (event.key === 'r' || event.key === 'R') {
+        // Reset receiver on R key
+        field.resetReceiver();
+        console.log("Receiver reset");
     }
 });
 
@@ -234,7 +261,7 @@ function init() {
     // Create game objects
     player = new Player(camera, renderer);
     field = new Field(scene, world);
-    football = new Football(scene, world, camera);
+    football = new Football(scene, world, camera, field);
     
     setupLighting();
     
@@ -252,21 +279,6 @@ function onWindowResize() {
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
     player.handleResize();
-}
-
-// Check if receiver caught the ball
-function checkCatch() {
-    if (football.checkCatch(field.receiverBody) && !gameState.receiverCaught) {
-        gameState.receiverCaught = true;
-        gameState.score += 7; // Touchdown!
-        scoreDisplay.innerHTML = `Score: ${gameState.score}`;
-        console.log('Touchdown! Receiver caught the ball!');
-        
-        // Reset for next play
-        setTimeout(() => {
-            gameState.receiverCaught = false;
-        }, 2000);
-    }
 }
 
 // Helper function to get color based on throw power
@@ -307,6 +319,12 @@ function animate() {
     
     // Update player
     player.update(delta);
+    
+    // Update field elements (including receiver)
+    field.update(delta);
+    
+    // Update catch counter display
+    catchCounter.innerHTML = `Catches: ${field.catchCount}`;
     
     // Check if player is throwing
     const throwData = player.getThrowData();
@@ -350,9 +368,6 @@ function animate() {
         document.getElementById('crosshair-circle').style.width = '40px';
         document.getElementById('crosshair-circle').style.height = '40px';
     }
-    
-    // Check if receiver caught the ball
-    checkCatch();
     
     renderer.render(scene, camera);
 }

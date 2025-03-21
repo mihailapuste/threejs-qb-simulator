@@ -9,6 +9,9 @@ class Field {
         this.fieldBody = null;
         this.receiver = null;
         this.receiverBody = null;
+        this.receiverRunning = false;
+        this.receiverSpeed = 4; // yards per second
+        this.catchCount = 0; // Track number of catches
         this.init();
     }
 
@@ -185,25 +188,28 @@ class Field {
     }
 
     addReceiver() {
-        // Simple receiver representation
+        // Create receiver - positioned at the 40 yard line on the right side near the hash
         const geometry = new THREE.CylinderGeometry(0.3, 0.3, 1.8, 32);
-        const material = new THREE.MeshStandardMaterial({ color: 0xFF0000 }); // Red jersey
+        const material = new THREE.MeshStandardMaterial({ color: 0x0000FF }); // Blue jersey
         this.receiver = new THREE.Mesh(geometry, material);
-        this.receiver.position.set(20, 0.9, 10); // To the right of the player
+        
+        // Position at the 40 yard line (40 yards from the left end zone)
+        // Near the hash mark (10 yards from center)
+        this.receiver.position.set(40 - 50, 0.9, 10); // Convert to coordinate system (0 is midfield)
         this.receiver.castShadow = true;
         this.scene.add(this.receiver);
         
         // Receiver physics
         this.receiverBody = new CANNON.Body({
-            mass: 0, // Static body
+            mass: 0, // Static body until we start moving
             shape: new CANNON.Cylinder(0.3, 0.3, 1.8, 32),
-            position: new CANNON.Vec3(20, 0.9, 10)
+            position: new CANNON.Vec3(40 - 50, 0.9, 10)
         });
         this.world.addBody(this.receiverBody);
         
         // Add receiver arms to catch the ball
         const armGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.5);
-        const armMaterial = new THREE.MeshStandardMaterial({ color: 0xFF0000 });
+        const armMaterial = new THREE.MeshStandardMaterial({ color: 0x0000FF });
         
         const leftArm = new THREE.Mesh(armGeometry, armMaterial);
         leftArm.position.set(-0.4, 0.2, 0);
@@ -212,18 +218,118 @@ class Field {
         const rightArm = new THREE.Mesh(armGeometry, armMaterial);
         rightArm.position.set(0.4, 0.2, 0);
         this.receiver.add(rightArm);
+        
+        // Add jersey number
+        const jerseyCanvas = document.createElement('canvas');
+        jerseyCanvas.width = 64;
+        jerseyCanvas.height = 64;
+        const context = jerseyCanvas.getContext('2d');
+        context.fillStyle = 'white';
+        context.font = 'bold 48px Arial';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillText('88', 32, 32);
+        
+        const jerseyTexture = new THREE.CanvasTexture(jerseyCanvas);
+        const jerseyMaterial = new THREE.MeshBasicMaterial({
+            map: jerseyTexture,
+            transparent: true,
+            side: THREE.DoubleSide
+        });
+        
+        const jerseyNumber = new THREE.PlaneGeometry(0.4, 0.4);
+        const jerseyMesh = new THREE.Mesh(jerseyNumber, jerseyMaterial);
+        jerseyMesh.position.set(0, 0.2, 0.31);
+        this.receiver.add(jerseyMesh);
     }
 
     checkCatch(footballBody) {
-        // This method is no longer used since the Football class handles catch detection
-        // Keeping it for backward compatibility
         if (footballBody && this.receiverBody) {
             const distance = footballBody.position.distanceTo(this.receiverBody.position);
-            if (distance < 1.5) {
+            if (distance < 0.5) { 
+                // Highlight the receiver to indicate a catch
+                if (this.receiver.material) {
+                    this.receiver.material.emissive = new THREE.Color(0x00FF00);
+                    this.receiver.material.emissiveIntensity = 0.5;
+                    
+                    // Reset emissive after 1 second
+                    setTimeout(() => {
+                        this.receiver.material.emissive = new THREE.Color(0x000000);
+                        this.receiver.material.emissiveIntensity = 0;
+                    }, 1000);
+                }
+                this.catchCount++; 
+                console.log(`Catch made! Total catches: ${this.catchCount}`);
                 return true;
             }
         }
         return false;
+    }
+    
+    update(deltaTime) {
+        // Update receiver position if running
+        if (this.receiverRunning && this.receiver && this.receiverBody) {
+            // Move receiver forward (in positive x direction) at receiverSpeed
+            const moveDistance = this.receiverSpeed * deltaTime;
+            
+            // Update mesh position
+            this.receiver.position.x += moveDistance;
+            
+            // Update physics body position
+            this.receiverBody.position.x += moveDistance;
+            
+            // Stop the receiver if they reach the end zone
+            if (this.receiver.position.x > 50) {
+                this.receiverRunning = false;
+                
+                // Celebrate the touchdown
+                if (this.receiver.material) {
+                    this.receiver.material.emissive = new THREE.Color(0xFFFF00);
+                    this.receiver.material.emissiveIntensity = 0.5;
+                    
+                    // Reset emissive after 2 seconds
+                    setTimeout(() => {
+                        this.receiver.material.emissive = new THREE.Color(0x000000);
+                        this.receiver.material.emissiveIntensity = 0;
+                    }, 2000);
+                }
+            }
+        }
+    }
+    
+    startReceiverRoute() {
+        // Start the receiver running
+        this.receiverRunning = true;
+        
+        // Make the receiver flash briefly to indicate they're starting
+        if (this.receiver.material) {
+            this.receiver.material.emissive = new THREE.Color(0xFFFFFF);
+            this.receiver.material.emissiveIntensity = 0.5;
+            
+            // Reset emissive after 0.5 seconds
+            setTimeout(() => {
+                this.receiver.material.emissive = new THREE.Color(0x000000);
+                this.receiver.material.emissiveIntensity = 0;
+            }, 500);
+        }
+    }
+    
+    resetReceiver() {
+        // Reset receiver to starting position
+        if (this.receiver && this.receiverBody) {
+            // Stop running
+            this.receiverRunning = false;
+            
+            // Reset position to 40 yard line
+            this.receiver.position.set(40 - 50, 0.9, 10);
+            this.receiverBody.position.set(40 - 50, 0.9, 10);
+            
+            // Reset any visual effects
+            if (this.receiver.material) {
+                this.receiver.material.emissive = new THREE.Color(0x000000);
+                this.receiver.material.emissiveIntensity = 0;
+            }
+        }
     }
 
     addGoalPosts() {
