@@ -31,7 +31,7 @@ class Football {
         this.mesh = new THREE.Mesh(footballGeometry, footballMaterial);
         this.mesh.castShadow = true;
         
-        // Add laces to the football
+        // Add laces to the football (like in the image)
         this.addLaces(this.mesh, radiusY);
         
         // Position the football in hands
@@ -39,14 +39,84 @@ class Football {
     }
 
     addLaces(footballMesh, radiusY) {
-        // Create laces
-        const lacesGeometry = new THREE.BoxGeometry(0.02, 0.01, 0.1);
-        const lacesMaterial = new THREE.MeshStandardMaterial({ color: 0xFFFFFF });
-        const laces = new THREE.Mesh(lacesGeometry, lacesMaterial);
+        // Create a single white lace on the football
+        const lacesMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xFFFFFF,  // Pure white
+            roughness: 0.2,
+            metalness: 0.1,
+            side: THREE.DoubleSide // Make the lace visible from both sides
+        });
         
-        // Position laces on top of the football
-        laces.position.set(0, radiusY * 0.8, 0);
-        footballMesh.add(laces);
+        // Create a single lace - length of the football
+        const radiusZ = 0.2; // Length of football (from init method)
+        const laceLength = radiusZ * 0.8; // 80% of football length to follow curvature better
+        const laceWidth = 0.03; // Narrower lace
+        
+        // Create a curved path for the lace to follow the football's elliptical shape
+        const points = [];
+        const segments = 20;
+        
+        // Create points along an elliptical path
+        for (let i = 0; i <= segments; i++) {
+            const t = (i / segments) * 2 - 1; // Range from -1 to 1
+            const z = t * (laceLength / 2);
+            
+            // Calculate y based on elliptical equation
+            // This creates a curved path that follows the football's elliptical shape
+            const y = radiusY * 0.95 + 0.02 * (1 - Math.pow(t, 2));
+            
+            points.push(new THREE.Vector3(0, y, z));
+        }
+        
+        // Create a curve from the points
+        const curve = new THREE.CatmullRomCurve3(points);
+        
+        // Create a tube geometry that follows the curve
+        const tubeGeometry = new THREE.TubeGeometry(curve, segments, laceWidth / 2, 8, false);
+        
+        // Create the lace mesh
+        const lace = new THREE.Mesh(tubeGeometry, lacesMaterial);
+        
+        // Add the lace to the football
+        footballMesh.add(lace);
+        
+        // Add stitches to make the lace more visible
+        const stitchMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+        const stitchWidth = 0.0025;
+        const stitchHeight = 0.005;
+        const stitchDepth = 0.015;
+        const numStitches = 8;
+        
+        // Create stitches along the curve
+        for (let i = 0; i < numStitches; i++) {
+            // Calculate position along the curve (from 0 to 1)
+            const t = (i + 1) / (numStitches + 1);
+            
+            // Get point and tangent at this position on the curve
+            const point = curve.getPointAt(t);
+            const tangent = curve.getTangentAt(t).normalize();
+            
+            // Create a small box for the stitch
+            const stitchGeometry = new THREE.BoxGeometry(stitchWidth, stitchHeight, stitchDepth);
+            const stitch = new THREE.Mesh(stitchGeometry, stitchMaterial);
+            
+            // Position the stitch at the point on the curve
+            stitch.position.copy(point);
+            
+            // Orient the stitch to follow the curve
+            // Create a quaternion that rotates from the default orientation to align with the tangent
+            const quaternion = new THREE.Quaternion();
+            const up = new THREE.Vector3(0, 1, 0);
+            const axis = new THREE.Vector3().crossVectors(up, tangent).normalize();
+            const angle = Math.acos(up.dot(tangent));
+            quaternion.setFromAxisAngle(axis, angle);
+            
+            // Apply the rotation
+            stitch.quaternion.copy(quaternion);
+            
+            // Add the stitch to the football
+            footballMesh.add(stitch);
+        }
     }
 
     positionInHands() {
@@ -65,18 +135,24 @@ class Football {
         // Update all thrown footballs
         if (this.thrownBalls.length > 0) {
             this.thrownBalls.forEach(ball => {
+                // Update position from physics
                 ball.mesh.position.copy(ball.body.position);
-                ball.mesh.quaternion.copy(ball.body.quaternion);
                 
-                // Update spiral rotation for thrown balls
-                if (ball.spiralAxis && !ball.caught) {
+                // Only update orientation if not caught and still moving
+                if (!ball.caught && ball.body.velocity.length() > 0.1) {
+                    // Keep the football pointed in the direction of travel
+                    // with the pointy end (z-axis) aligned with the throw direction
+                    ball.mesh.quaternion.copy(ball.initialQuaternion);
+                    
+                    // Apply spiral rotation around the forward axis (z-axis)
+                    // This creates a clockwise spiral when viewed from behind the ball
                     ball.spiralRotation += ball.spiralSpeed;
                     
                     // Create a rotation quaternion for the spiral
                     const spiralQuaternion = new THREE.Quaternion();
-                    spiralQuaternion.setFromAxisAngle(ball.spiralAxis, ball.spiralRotation);
+                    spiralQuaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), ball.spiralRotation);
                     
-                    // Combine with the physics quaternion
+                    // Apply the spiral rotation
                     ball.mesh.quaternion.multiply(spiralQuaternion);
                 }
             });
@@ -91,16 +167,23 @@ class Football {
         const worldPosition = new THREE.Vector3();
         this.mesh.getWorldPosition(worldPosition);
         
-        const worldQuaternion = new THREE.Quaternion();
-        this.mesh.getWorldQuaternion(worldQuaternion);
-        
         // Clone the football mesh
         const thrownFootball = this.mesh.clone();
         this.scene.add(thrownFootball);
         
-        // Set position and rotation in world space
+        // Set initial position
         thrownFootball.position.copy(worldPosition);
-        thrownFootball.quaternion.copy(worldQuaternion);
+        
+        // Normalize the throw direction
+        const throwDirection = direction.clone().normalize();
+        
+        // Create a quaternion that orients the football along the throw direction
+        // with the pointy end (z-axis) aligned with the direction
+        const initialQuaternion = new THREE.Quaternion();
+        initialQuaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), throwDirection);
+        
+        // Apply the orientation
+        thrownFootball.quaternion.copy(initialQuaternion);
         
         // Create a new physics body for the thrown football
         const radiusX = 0.08;
@@ -113,26 +196,22 @@ class Football {
             shape: new CANNON.Sphere(physicsRadius),
             material: new CANNON.Material({ restitution: 0.7 }),
             linearDamping: 0.1,
-            angularDamping: 0.1
+            angularDamping: 0.9 // Increased to reduce wobbling even more
         });
         
         thrownBody.position.copy(worldPosition);
-        thrownBody.quaternion.copy(worldQuaternion);
         this.world.addBody(thrownBody);
         
         // Apply force to throw the football
-        const throwForce = 25 * (power / 100); // Increased force for better throws
+        const throwForce = 25 * (power / 100);
         thrownBody.velocity.set(
             direction.x * throwForce,
             direction.y * throwForce,
             direction.z * throwForce
         );
         
-        // Create a spiral axis aligned with the direction of throw
-        const spiralAxis = new THREE.Vector3().copy(direction);
-        
-        // Calculate spiral speed based on throw power
-        const spiralSpeed = 0.2 + (power / 100) * 0.3; // 0.2 to 0.5 radians per frame
+        // Calculate spiral speed - tight spiral with consistent rotation
+        const spiralSpeed = 0.15 + (power / 100) * 0.1; // Slightly faster spiral
         
         // Add the thrown football to the list of thrown balls
         this.thrownBalls.push({
@@ -140,7 +219,8 @@ class Football {
             body: thrownBody,
             timeThrownAt: Date.now(),
             caught: false,
-            spiralAxis: spiralAxis,
+            throwDirection: throwDirection,
+            initialQuaternion: initialQuaternion.clone(),
             spiralRotation: 0,
             spiralSpeed: spiralSpeed
         });
