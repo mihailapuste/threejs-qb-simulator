@@ -217,8 +217,32 @@ class Football {
         const thrownFootball = this.mesh.clone();
         this.scene.add(thrownFootball);
         
-        // Set initial position
-        thrownFootball.position.copy(worldPosition);
+        // Calculate the position offset for a right-handed throw
+        // Get camera direction and right vector
+        const cameraDirection = new THREE.Vector3();
+        this.camera.getWorldDirection(cameraDirection);
+        
+        // Get the camera's right vector
+        const cameraRight = new THREE.Vector3(1, 0, 0);
+        cameraRight.applyQuaternion(this.camera.quaternion);
+        
+        // Get the camera's up vector
+        const cameraUp = new THREE.Vector3(0, 1, 0);
+        cameraUp.applyQuaternion(this.camera.quaternion);
+        
+        // Position the football to the right and slightly above the camera
+        const rightOffset = 0.4; // Distance to the right
+        const upOffset = 0.2;    // Distance up
+        const forwardOffset = 0.5; // Distance forward
+        
+        // Calculate the new position
+        const throwPosition = new THREE.Vector3().copy(this.camera.position)
+            .add(cameraRight.multiplyScalar(rightOffset))
+            .add(cameraUp.multiplyScalar(upOffset))
+            .add(cameraDirection.multiplyScalar(forwardOffset));
+        
+        // Set the position of the thrown football
+        thrownFootball.position.copy(throwPosition);
         
         // Normalize the throw direction
         const throwDirection = direction.clone().normalize();
@@ -245,7 +269,8 @@ class Football {
             angularDamping: 0.9 // Increased to reduce wobbling even more
         });
         
-        thrownBody.position.copy(worldPosition);
+        // Set the physics body position to match the visual position
+        thrownBody.position.copy(throwPosition);
         this.world.addBody(thrownBody);
         
         // Apply force to throw the football
