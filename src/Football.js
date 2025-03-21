@@ -182,63 +182,164 @@ class Football {
         // Update all thrown footballs
         if (this.thrownBalls.length > 0) {
             this.thrownBalls.forEach(ball => {
-                // Update position from physics
-                ball.mesh.position.copy(ball.body.position);
-                
-                // Only update orientation if not caught and still moving
-                if (!ball.caught && ball.body.velocity.length() > 0.1) {
-                    // Keep the football pointed in the direction of travel
-                    // with the pointy end (z-axis) aligned with the throw direction
-                    ball.mesh.quaternion.copy(ball.initialQuaternion);
+                // Check if the ball is still in the throwing animation
+                if (ball.animating) {
+                    const now = Date.now();
+                    const elapsed = now - ball.startTime;
                     
-                    // Apply spiral rotation around the forward axis (z-axis)
-                    // This creates a clockwise spiral when viewed from behind the ball
-                    ball.spiralRotation += ball.spiralSpeed;
-                    
-                    // Create a rotation quaternion for the spiral
-                    const spiralQuaternion = new THREE.Quaternion();
-                    spiralQuaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), ball.spiralRotation);
-                    
-                    // Apply the spiral rotation
-                    ball.mesh.quaternion.multiply(spiralQuaternion);
-                } else if (!ball.landed && ball.body.velocity.length() < 0.1) {
-                    // Ball has landed
-                    ball.landed = true;
-                    
-                    // Create a new football for the player's hands if needed
-                    if (this.needNewFootball && this.mesh === null) {
-                        this.createNewFootballForHands();
-                        this.needNewFootball = false;
-                    }
-                }
-                
-                // Fade out the trajectory line after 2 seconds
-                if (ball.trajectoryLine) {
-                    const elapsedTime = (Date.now() - ball.timeThrownAt) / 1000; // in seconds
-                    if (elapsedTime > 2) {
-                        // Fade out over 1 second
-                        const fadeOutFactor = Math.max(0, 1 - (elapsedTime - 2));
-                        ball.trajectoryLine.material.opacity = 0.7 * fadeOutFactor;
+                    if (elapsed < ball.totalDuration) {
+                        // Calculate animation progress (0 to 1)
+                        const progress = elapsed / ball.totalDuration;
                         
-                        // Also fade out the landing spot marker if it exists
-                        if (ball.trajectoryLine.userData.landingSpot) {
-                            // Fade out all children of the landing spot group
-                            ball.trajectoryLine.userData.landingSpot.children.forEach(child => {
-                                if (child.material) {
-                                    child.material.opacity = child.material.opacity * fadeOutFactor;
-                                }
-                            });
+                        // Calculate the position based on the two-phase animation
+                        let position;
+                        if (elapsed < ball.loadingDuration) {
+                            // Loading phase
+                            const loadingProgress = elapsed / ball.loadingDuration;
+                            position = new THREE.Vector3().lerpVectors(
+                                ball.startPosition,
+                                ball.loadingPosition,
+                                loadingProgress
+                            );
+                        } else {
+                            // Throwing phase
+                            const throwingProgress = (elapsed - ball.loadingDuration) / ball.throwingDuration;
+                            position = new THREE.Vector3().lerpVectors(
+                                ball.loadingPosition,
+                                ball.releasePosition,
+                                throwingProgress
+                            );
                         }
                         
-                        // Remove the trajectory line after it's fully faded out
-                        if (fadeOutFactor <= 0) {
-                            // Remove landing spot marker if it exists
+                        // Set the ball's position
+                        ball.mesh.position.copy(position);
+                        
+                        // Interpolate rotation using quaternions
+                        if (ball.startRotation && ball.releaseQuaternion) {
+                            const quaternion = new THREE.Quaternion();
+                            if (elapsed < ball.loadingDuration) {
+                                // Loading phase - keep original rotation with slight adjustment
+                                const loadingProgress = elapsed / ball.loadingDuration;
+                                const loadingRotation = new THREE.Euler(
+                                    ball.startRotation.x - (loadingProgress * 0.2), // Reduced tilt (from 0.3)
+                                    ball.startRotation.y + (loadingProgress * 0.1), // Reduced rotation (from 0.2)
+                                    ball.startRotation.z,
+                                    ball.startRotation.order
+                                );
+                                quaternion.setFromEuler(loadingRotation);
+                            } else {
+                                // Throwing phase - rotate to align with throw direction
+                                const throwingProgress = (elapsed - ball.loadingDuration) / ball.throwingDuration;
+                                THREE.Quaternion.slerp(
+                                    new THREE.Quaternion().setFromEuler(new THREE.Euler(
+                                        ball.startRotation.x - 0.2, // Reduced tilt (from 0.3)
+                                        ball.startRotation.y + 0.1, // Reduced rotation (from 0.2)
+                                        ball.startRotation.z,
+                                        ball.startRotation.order
+                                    )),
+                                    ball.releaseQuaternion,
+                                    quaternion,
+                                    throwingProgress
+                                );
+                            }
+                            ball.mesh.quaternion.copy(quaternion);
+                        }
+                        
+                        // Add a slight spinning effect during the throw
+                        if (elapsed >= ball.loadingDuration) {
+                            // Only add spin during the throwing phase
+                            const throwingProgress = (elapsed - ball.loadingDuration) / ball.throwingDuration;
+                            const spinSpeed = 0.3; // Reduced from 0.5 for more natural spin
+                            const spinAxis = new THREE.Vector3(0, 0, 1);
+                            const spinQuaternion = new THREE.Quaternion().setFromAxisAngle(
+                                spinAxis, 
+                                throwingProgress * Math.PI * 2 * spinSpeed
+                            );
+                            ball.mesh.quaternion.multiply(spinQuaternion);
+                        }
+                    } else {
+                        // Animation complete, set final position and start physics
+                        ball.mesh.position.copy(ball.releasePosition);
+                        ball.mesh.quaternion.copy(ball.releaseQuaternion);
+                        
+                        // Set the physics body position to match the visual position
+                        ball.body.position.copy(ball.releasePosition);
+                        this.world.addBody(ball.body);
+                        
+                        // Apply force to throw the football using the corrected direction
+                        const direction = ball.throwDirection;
+                        ball.body.velocity.set(
+                            direction.x * ball.throwForce,
+                            direction.y * ball.throwForce,
+                            direction.z * ball.throwForce
+                        );
+                        
+                        // Add a trail effect for the football
+                        this.addTrailEffect(ball.mesh);
+                        
+                        // Mark animation as complete
+                        ball.animating = false;
+                    }
+                } else {
+                    // Normal physics update for non-animating balls
+                    // Update position from physics
+                    ball.mesh.position.copy(ball.body.position);
+                    
+                    // Only update orientation if not caught and still moving
+                    if (!ball.caught && ball.body.velocity.length() > 0.1) {
+                        // Keep the football pointed in the direction of travel
+                        // with the pointy end (z-axis) aligned with the throw direction
+                        ball.mesh.quaternion.copy(ball.initialQuaternion);
+                        
+                        // Apply spiral rotation around the forward axis (z-axis)
+                        // This creates a clockwise spiral when viewed from behind the ball
+                        ball.spiralRotation += ball.spiralSpeed;
+                        
+                        // Create a rotation quaternion for the spiral
+                        const spiralQuaternion = new THREE.Quaternion();
+                        spiralQuaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), ball.spiralRotation);
+                        
+                        // Apply the spiral rotation
+                        ball.mesh.quaternion.multiply(spiralQuaternion);
+                    } else if (!ball.landed && ball.body.velocity.length() < 0.1) {
+                        // Ball has landed
+                        ball.landed = true;
+                        
+                        // Create a new football for the player's hands if needed
+                        if (this.needNewFootball && this.mesh === null) {
+                            this.createNewFootballForHands();
+                            this.needNewFootball = false;
+                        }
+                    }
+                    
+                    // Fade out the trajectory line after 2 seconds
+                    if (ball.trajectoryLine) {
+                        const elapsedTime = (Date.now() - ball.timeThrownAt) / 1000; // in seconds
+                        if (elapsedTime > 2) {
+                            // Fade out over 1 second
+                            const fadeOutFactor = Math.max(0, 1 - (elapsedTime - 2));
+                            ball.trajectoryLine.material.opacity = 0.7 * fadeOutFactor;
+                            
+                            // Also fade out the landing spot marker if it exists
                             if (ball.trajectoryLine.userData.landingSpot) {
-                                this.scene.remove(ball.trajectoryLine.userData.landingSpot);
+                                // Fade out all children of the landing spot group
+                                ball.trajectoryLine.userData.landingSpot.children.forEach(child => {
+                                    if (child.material) {
+                                        child.material.opacity = child.material.opacity * fadeOutFactor;
+                                    }
+                                });
                             }
                             
-                            this.scene.remove(ball.trajectoryLine);
-                            ball.trajectoryLine = null;
+                            // Remove the trajectory line after it's fully faded out
+                            if (fadeOutFactor <= 0) {
+                                // Remove landing spot marker if it exists
+                                if (ball.trajectoryLine.userData.landingSpot) {
+                                    this.scene.remove(ball.trajectoryLine.userData.landingSpot);
+                                }
+                                
+                                this.scene.remove(ball.trajectoryLine);
+                                ball.trajectoryLine = null;
+                            }
                         }
                     }
                 }
@@ -268,15 +369,18 @@ class Football {
     }
 
     throw(direction, power) {
-        // Get the current world position of the football
-        const worldPosition = new THREE.Vector3();
-        this.mesh.getWorldPosition(worldPosition);
+        // Get the current world position of the football in the player's hand
+        const handPosition = new THREE.Vector3();
+        this.mesh.getWorldPosition(handPosition);
         
         // Remove the football from the camera (so it's no longer attached to the view)
         this.camera.remove(this.mesh);
         
         // Add the football to the scene directly
         this.scene.add(this.mesh);
+        
+        // Set the mesh position to the hand position in world space
+        this.mesh.position.copy(handPosition);
         
         // Calculate the position offset for a right-handed throw
         // Get camera direction and right vector
@@ -291,19 +395,32 @@ class Football {
         const cameraUp = new THREE.Vector3(0, 1, 0);
         cameraUp.applyQuaternion(this.camera.quaternion);
         
-        // Position the football to the right and slightly above the camera
-        const rightOffset = 0.4; // Distance to the right
-        const upOffset = 0.4;    // Distance up
-        const forwardOffset = 0.8; // Distance forward
+        // Define the three key positions for the throwing animation
+        // 1. Starting position (hand position)
+        const startPosition = handPosition.clone();
         
-        // Calculate the new position
-        const throwPosition = new THREE.Vector3().copy(this.camera.position)
-            .add(cameraRight.multiplyScalar(rightOffset))
-            .add(cameraUp.multiplyScalar(upOffset))
-            .add(cameraDirection.multiplyScalar(forwardOffset));
+        // 2. Loading position (pulled back, down and to the right)
+        const loadingOffset = new THREE.Vector3().copy(cameraRight).multiplyScalar(0.3)  // Right (reduced from 0.4)
+            .add(new THREE.Vector3(0, -0.2, 0))                                         // Down (reduced from -0.3)
+            .add(cameraDirection.clone().multiplyScalar(-0.15));                        // Back (reduced from -0.2)
         
-        // Set the position of the football
-        this.mesh.position.copy(throwPosition);
+        const loadingPosition = new THREE.Vector3().copy(startPosition).add(loadingOffset);
+        
+        // 3. Release position (forward, up and to the right of camera)
+        const releaseOffset = new THREE.Vector3().copy(cameraRight).multiplyScalar(0.4)  // Right (reduced from 0.5)
+            .add(new THREE.Vector3(0, 0.15, 0))                                         // Up (reduced from 0.2)
+            .add(cameraDirection.clone().multiplyScalar(0.8));                          // Forward (reduced from 1.0)
+        
+        const releasePosition = new THREE.Vector3().copy(this.camera.position).add(releaseOffset);
+        
+        // Set up animation parameters
+        const totalDuration = 250; // Reduced from 400ms to 250ms for faster animation
+        const loadingDuration = totalDuration * 0.35; // 35% of time for loading (reduced from 40%)
+        const throwingDuration = totalDuration * 0.65; // 65% of time for throwing (increased from 60%)
+        const startTime = Date.now();
+        
+        // Store the starting rotation
+        const startRotation = this.mesh.rotation.clone();
         
         // Calculate a target point far in the distance at the center of the screen
         // but slightly below to create a downward arc
@@ -315,17 +432,14 @@ class Football {
             .add(direction.clone().multiplyScalar(targetDistance))
             .add(downwardAdjustment); // Add downward adjustment
         
-        // Calculate corrected direction from throw position to target point
+        // Calculate corrected direction from release position to target point
         const correctedDirection = new THREE.Vector3()
-            .subVectors(targetPoint, throwPosition)
+            .subVectors(targetPoint, releasePosition)
             .normalize();
         
         // Create a quaternion that orients the football along the throw direction
-        const initialQuaternion = new THREE.Quaternion();
-        initialQuaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), correctedDirection);
-        
-        // Apply the orientation
-        this.mesh.quaternion.copy(initialQuaternion);
+        const releaseQuaternion = new THREE.Quaternion();
+        releaseQuaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), correctedDirection);
         
         // Create a new physics body for the thrown football
         const radiusX = 0.1;
@@ -341,25 +455,16 @@ class Football {
             angularDamping: 0.9 // Increased to reduce wobbling even more
         });
         
-        // Set the physics body position to match the visual position
-        thrownBody.position.copy(throwPosition);
-        this.world.addBody(thrownBody);
-        
-        // Apply force to throw the football using the corrected direction
-        const throwForce = 25 * (power / 100);
-        thrownBody.velocity.set(
-            correctedDirection.x * throwForce,
-            correctedDirection.y * throwForce,
-            correctedDirection.z * throwForce
-        );
-        
-        // Calculate spiral speed - tight spiral with consistent rotation
+        // Calculate spiral speed
         const spiralSpeed = 0.15 + (power / 100) * 0.1; // Slightly faster spiral
         
-        // Create trajectory visualization
-        const trajectoryLine = this.createTrajectoryLine(throwPosition, correctedDirection, throwForce);
+        // Calculate throw force
+        const throwForce = 25 * (power / 100);
         
-        // Add the thrown football to the list of thrown balls
+        // Create trajectory visualization
+        const trajectoryLine = this.createTrajectoryLine(releasePosition, correctedDirection, throwForce);
+        
+        // Add the thrown football to the list of thrown balls with animation data
         this.thrownBalls.push({
             mesh: this.mesh,
             body: thrownBody,
@@ -367,15 +472,24 @@ class Football {
             throwTime: Date.now(),
             caught: false,
             throwDirection: correctedDirection,
-            initialQuaternion: initialQuaternion.clone(),
+            initialQuaternion: releaseQuaternion.clone(),
             spiralRotation: 0,
             spiralSpeed: spiralSpeed,
             trajectoryLine: trajectoryLine,
-            landed: false
+            landed: false,
+            // Animation properties
+            animating: true,
+            startTime: startTime,
+            totalDuration: totalDuration,
+            loadingDuration: loadingDuration,
+            throwingDuration: throwingDuration,
+            startPosition: startPosition,
+            loadingPosition: loadingPosition,
+            releasePosition: releasePosition,
+            startRotation: startRotation,
+            releaseQuaternion: releaseQuaternion,
+            throwForce: throwForce
         });
-        
-        // Add a trail effect for the football
-        this.addTrailEffect(this.mesh);
         
         // We'll create a new football in the update method when the thrown one lands
         this.needNewFootball = true;
