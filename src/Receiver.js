@@ -17,7 +17,8 @@ class Receiver {
         // Define available routes
         this.routes = {
             'seam': [
-                { x: 50, z: 10 } // Straight up the field
+                { x: 8, z: 10 }, 
+                { x: 30, z: 0 }   
             ],
             'out': [
                 { x: 6, z: 10 }, // 6 yards up
@@ -25,7 +26,7 @@ class Receiver {
             ],
             'slant': [
                 { x: 3, z: 10 }, // 3 yards up
-                { x: 50, z: 0 } // 40° angle towards the middle
+                { x: 7, z: 0 }  // Harsh 40 degree cut inwards
             ]
         };
         
