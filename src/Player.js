@@ -11,7 +11,6 @@ class Player {
         this.throwChargeRate = 2;
         this.throwing = false;
         this.throwReleased = false;
-        this.powerBar = document.getElementById('power-bar');
         
         // Movement variables
         this.moveForward = false;
@@ -32,11 +31,7 @@ class Player {
         // Set up controls - using PointerLockControls instead of FirstPersonControls
         this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
         
-        // Add event listeners for throwing
-        document.addEventListener('mousedown', this.startThrow.bind(this));
-        document.addEventListener('mouseup', this.endThrow.bind(this));
-        
-        // Add event listeners for keyboard movement
+        // Add event listeners for keyboard controls
         document.addEventListener('keydown', this.onKeyDown.bind(this));
         document.addEventListener('keyup', this.onKeyUp.bind(this));
         
@@ -64,6 +59,12 @@ class Player {
             case 'KeyD':
                 this.moveRight = true;
                 break;
+            case 'Space':
+                // Start throw on spacebar press
+                if (!this.throwing && this.controls.isLocked) {
+                    this.startThrow();
+                }
+                break;
         }
     }
     
@@ -85,12 +86,18 @@ class Player {
             case 'KeyD':
                 this.moveRight = false;
                 break;
+            case 'Space':
+                // End throw on spacebar release
+                if (this.throwing) {
+                    this.endThrow();
+                }
+                break;
         }
     }
 
-    startThrow(event) {
-        // Only react to left mouse button and when pointer is locked
-        if (event.button === 0 && this.controls.isLocked) {
+    startThrow() {
+        // Only start throw when controls are locked
+        if (this.controls.isLocked) {
             this.throwing = true;
             this.throwPower = 0;
             this.throwReleased = false;
@@ -100,14 +107,11 @@ class Player {
     updateThrowPower() {
         if (this.throwing && !this.throwReleased && this.throwPower < this.maxThrowPower) {
             this.throwPower += this.throwChargeRate;
-            // Update power bar UI
-            this.powerBar.style.width = `${this.throwPower}%`;
         }
     }
 
-    endThrow(event) {
-        // Only react to left mouse button
-        if (event.button === 0 && this.throwing) {
+    endThrow() {
+        if (this.throwing) {
             this.throwReleased = true;
         }
     }
@@ -128,13 +132,21 @@ class Player {
             // Store the power before resetting
             const power = this.throwPower;
             
-            // Reset power bar
+            // Reset power
             this.throwPower = 0;
-            this.powerBar.style.width = '0%';
             
             return { direction, power };
         }
         return null;
+    }
+    
+    // New methods to expose throw state
+    isChargingThrow() {
+        return this.throwing && !this.throwReleased;
+    }
+    
+    getThrowPower() {
+        return this.throwPower / this.maxThrowPower; // Return normalized value between 0 and 1
     }
 
     update(delta) {

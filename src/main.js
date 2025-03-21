@@ -28,6 +28,51 @@ scoreDisplay.style.zIndex = '100';
 scoreDisplay.innerHTML = 'Score: 0';
 document.getElementById('game-container').appendChild(scoreDisplay);
 
+// Create crosshair
+const crosshair = document.createElement('div');
+crosshair.id = 'crosshair';
+crosshair.style.position = 'absolute';
+crosshair.style.top = '50%';
+crosshair.style.left = '50%';
+crosshair.style.transform = 'translate(-50%, -50%)';
+crosshair.style.zIndex = '100';
+crosshair.style.pointerEvents = 'none'; // Ensure it doesn't interfere with clicks
+
+// Create crosshair elements with IDs for easy access
+crosshair.innerHTML = `
+    <div style="position: relative; width: 20px; height: 20px;">
+        <div id="crosshair-horizontal" style="position: absolute; top: 9px; left: 0; width: 20px; height: 2px; background-color: white;"></div>
+        <div id="crosshair-vertical" style="position: absolute; top: 0; left: 9px; width: 2px; height: 20px; background-color: white;"></div>
+        <div id="crosshair-center" style="position: absolute; top: 8px; left: 8px; width: 4px; height: 4px; border-radius: 50%; border: 1px solid white;"></div>
+    </div>
+`;
+document.getElementById('game-container').appendChild(crosshair);
+
+// Create throw power indicator
+const throwPowerIndicator = document.createElement('div');
+throwPowerIndicator.id = 'throw-power-indicator';
+throwPowerIndicator.style.position = 'absolute';
+throwPowerIndicator.style.bottom = '50px';
+throwPowerIndicator.style.left = '50%';
+throwPowerIndicator.style.transform = 'translateX(-50%)';
+throwPowerIndicator.style.width = '200px';
+throwPowerIndicator.style.height = '20px';
+throwPowerIndicator.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+throwPowerIndicator.style.borderRadius = '10px';
+throwPowerIndicator.style.overflow = 'hidden';
+throwPowerIndicator.style.zIndex = '100';
+throwPowerIndicator.style.display = 'none'; // Hidden by default
+
+const powerBar = document.createElement('div');
+powerBar.id = 'power-bar';
+powerBar.style.width = '0%';
+powerBar.style.height = '100%';
+powerBar.style.backgroundColor = 'red';
+powerBar.style.transition = 'width 0.1s';
+throwPowerIndicator.appendChild(powerBar);
+
+document.getElementById('game-container').appendChild(throwPowerIndicator);
+
 // Create controls info display
 const controlsInfo = document.createElement('div');
 controlsInfo.id = 'controls-info';
@@ -43,31 +88,10 @@ controlsInfo.innerHTML = `
     <h3>Controls:</h3>
     <p>Mouse: Look around</p>
     <p>WASD/Arrow Keys: Move</p>
-    <p>Left Mouse Button: Throw (hold to charge)</p>
+    <p>Spacebar: Throw (hold to charge)</p>
     <p>ESC: Pause game</p>
 `;
 document.getElementById('game-container').appendChild(controlsInfo);
-
-// Scene setup
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87CEEB); // Sky blue
-
-// Camera setup
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-
-// Renderer setup
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
-document.getElementById('game-container').appendChild(renderer.domElement);
-
-// Physics world
-const world = new CANNON.World({
-    gravity: new CANNON.Vec3(0, -9.82, 0)
-});
-
-// Game objects
-let player, field, football;
 
 // Pause menu
 const pauseMenu = document.createElement('div');
@@ -89,6 +113,27 @@ pauseMenu.innerHTML = `
     <button id="resume-button">Resume Game</button>
 `;
 document.getElementById('game-container').appendChild(pauseMenu);
+
+// Scene setup
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87CEEB); // Sky blue
+
+// Camera setup
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+// Renderer setup
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+document.getElementById('game-container').appendChild(renderer.domElement);
+
+// Physics world
+const world = new CANNON.World({
+    gravity: new CANNON.Vec3(0, -9.82, 0)
+});
+
+// Game objects
+let player, field, football;
 
 // Pause/resume functionality
 function togglePause() {
@@ -174,6 +219,24 @@ function checkCatch() {
     }
 }
 
+// Helper function to get color based on throw power
+function getColorForPower(power) {
+    // Start with green, transition to yellow, then red as power increases
+    if (power < 0.5) {
+        // Green to yellow (0 to 0.5)
+        const r = Math.floor(255 * (power * 2));
+        const g = 255;
+        const b = 0;
+        return `rgb(${r}, ${g}, ${b})`;
+    } else {
+        // Yellow to red (0.5 to 1.0)
+        const r = 255;
+        const g = Math.floor(255 * (1 - (power - 0.5) * 2));
+        const b = 0;
+        return `rgb(${r}, ${g}, ${b})`;
+    }
+}
+
 // Game loop
 const clock = new THREE.Clock();
 function animate() {
@@ -199,6 +262,29 @@ function animate() {
     const throwData = player.getThrowData();
     if (throwData) {
         football.throw(throwData.direction, throwData.power);
+    }
+    
+    // Update throw power indicator and crosshair
+    if (player.isChargingThrow()) {
+        // Show power indicator
+        throwPowerIndicator.style.display = 'block';
+        powerBar.style.width = `${player.getThrowPower() * 100}%`;
+        
+        // Change crosshair color based on throw power
+        const power = player.getThrowPower();
+        const color = getColorForPower(power);
+        
+        document.getElementById('crosshair-horizontal').style.backgroundColor = color;
+        document.getElementById('crosshair-vertical').style.backgroundColor = color;
+        document.getElementById('crosshair-center').style.borderColor = color;
+    } else {
+        // Hide power indicator
+        throwPowerIndicator.style.display = 'none';
+        
+        // Reset crosshair color
+        document.getElementById('crosshair-horizontal').style.backgroundColor = 'white';
+        document.getElementById('crosshair-vertical').style.backgroundColor = 'white';
+        document.getElementById('crosshair-center').style.borderColor = 'white';
     }
     
     // Check if receiver caught the ball
