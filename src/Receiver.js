@@ -20,11 +20,11 @@ class Receiver {
                 { x: 50, z: 10 } // Straight up the field
             ],
             'out': [
-                { x: (40 - 50) + 6, z: 10 }, // 6 yards up
-                { x: (40 - 50) + 6, z: 26.65 } // Out to the sideline
+                { x: 6, z: 10 }, // 6 yards up
+                { x: 6, z: 26.65 } // Out to the sideline
             ],
             'slant': [
-                { x: (40 - 50) + 3, z: 10 }, // 3 yards up
+                { x: 3, z: 10 }, // 3 yards up
                 { x: 50, z: 0 } // 40° angle towards the middle
             ]
         };
@@ -33,14 +33,14 @@ class Receiver {
     }
 
     init() {
-        // Create receiver - positioned at the 40 yard line on the right side near the hash
+        // Create receiver - positioned at the 50 yard line (midfield) on the right side near the hash
         const geometry = new THREE.CylinderGeometry(0.3, 0.3, 1.8, 32);
         const material = new THREE.MeshStandardMaterial({ color: 0x0000FF }); // Blue jersey
         this.mesh = new THREE.Mesh(geometry, material);
         
-        // Position at the 40 yard line (40 yards from the left end zone)
+        // Position at the 50 yard line (midfield)
         // Near the hash mark (10 yards from center)
-        this.mesh.position.set(40 - 50, 0.9, 10); // Convert to coordinate system (0 is midfield)
+        this.mesh.position.set(0, 0.9, 10); // 0 is midfield
         this.mesh.castShadow = true;
         this.scene.add(this.mesh);
         
@@ -48,7 +48,7 @@ class Receiver {
         this.body = new CANNON.Body({
             mass: 0, // Static body until we start moving
             shape: new CANNON.Cylinder(0.3, 0.3, 1.8, 32),
-            position: new CANNON.Vec3(40 - 50, 0.9, 10)
+            position: new CANNON.Vec3(0, 0.9, 10)
         });
         this.world.addBody(this.body);
         
@@ -220,9 +220,9 @@ class Receiver {
             this.routeStep = 0;
             this.routeTarget = null;
             
-            // Reset position to 40 yard line
-            this.mesh.position.set(40 - 50, 0.9, 10);
-            this.body.position.set(40 - 50, 0.9, 10);
+            // Reset position to 50 yard line
+            this.mesh.position.set(0, 0.9, 10);
+            this.body.position.set(0, 0.9, 10);
             
             // Reset rotation
             this.mesh.rotation.set(0, 0, 0);
