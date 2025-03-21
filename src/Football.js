@@ -210,8 +210,23 @@ class Football {
                         const fadeOutFactor = Math.max(0, 1 - (elapsedTime - 2));
                         ball.trajectoryLine.material.opacity = 0.7 * fadeOutFactor;
                         
+                        // Also fade out the landing spot marker if it exists
+                        if (ball.trajectoryLine.userData.landingSpot) {
+                            // Fade out all children of the landing spot group
+                            ball.trajectoryLine.userData.landingSpot.children.forEach(child => {
+                                if (child.material) {
+                                    child.material.opacity = child.material.opacity * fadeOutFactor;
+                                }
+                            });
+                        }
+                        
                         // Remove the trajectory line after it's fully faded out
                         if (fadeOutFactor <= 0) {
+                            // Remove landing spot marker if it exists
+                            if (ball.trajectoryLine.userData.landingSpot) {
+                                this.scene.remove(ball.trajectoryLine.userData.landingSpot);
+                            }
+                            
                             this.scene.remove(ball.trajectoryLine);
                             ball.trajectoryLine = null;
                         }
@@ -222,6 +237,24 @@ class Football {
         
         // Clean up old footballs
         this.cleanupOldFootballs();
+        
+        // Animate the pulsing ring around the landing spot
+        this.scene.children.forEach(child => {
+            if (child.userData && child.userData.pulsingRing) {
+                const creationTime = child.userData.creationTime;
+                const pulsingRing = child.userData.pulsingRing;
+                const elapsedTime = (Date.now() - creationTime) / 1000; // in seconds
+                
+                // Pulse the ring outward with a more dynamic effect
+                const pulseFactor = (Math.sin(elapsedTime * 4) + 1) / 2; // Oscillate between 0 and 1, faster
+                pulsingRing.scale.set(1 + pulseFactor * 0.5, 1 + pulseFactor * 0.5, 1);
+                
+                // Also pulse the opacity for added effect
+                if (pulsingRing.material) {
+                    pulsingRing.material.opacity = 0.3 + pulseFactor * 0.4; // Oscillate between 0.3 and 0.7
+                }
+            }
+        });
     }
 
     throw(direction, power) {
@@ -399,6 +432,11 @@ class Football {
         const positions = [];
         
         // Calculate the trajectory points
+        let landingPosition = null;
+        let lastY = startPosition.y;
+        let lastX = startPosition.x;
+        let lastZ = startPosition.z;
+        
         for (let i = 0; i < 100; i++) {
             const t = i / 10;
             const x = startPosition.x + direction.x * throwForce * t;
@@ -407,8 +445,25 @@ class Football {
             
             positions.push(x, y, z);
             
-            // Stop if the ball hits the ground
+            // Store last position above ground
+            if (y > 0) {
+                lastY = y;
+                lastX = x;
+                lastZ = z;
+            }
+            
+            // Stop if the ball hits the ground and record landing position
             if (y <= 0) {
+                // Calculate exact landing position by interpolating between last point above ground and current point
+                const ratio = lastY / (lastY - y);
+                const exactX = lastX + ratio * (x - lastX);
+                const exactZ = lastZ + ratio * (z - lastZ);
+                
+                // Set landing position exactly at ground level (y=0)
+                landingPosition = new THREE.Vector3(exactX, 0, exactZ);
+                
+                // Add the exact landing position to make the line connect properly
+                positions.push(exactX, 0, exactZ);
                 break;
             }
         }
@@ -429,6 +484,80 @@ class Football {
         
         // Add the trajectory line to the scene
         this.scene.add(trajectoryLine);
+        
+        // Create a landing spot marker if we have a landing position
+        if (landingPosition) {
+            // Create a group to hold the landing spot elements
+            const landingSpotGroup = new THREE.Group();
+            
+            // Create a bright orange circle to mark the landing spot
+            // Make it larger for better visibility
+            const circleGeometry = new THREE.CircleGeometry(0.8, 32);
+            const circleMaterial = new THREE.MeshBasicMaterial({
+                color: 0xFF6600, // Bright orange
+                opacity: 0.8,
+                transparent: true,
+                side: THREE.DoubleSide
+            });
+            const landingCircle = new THREE.Mesh(circleGeometry, circleMaterial);
+            
+            // Position the circle at the landing spot slightly above ground level to avoid z-fighting
+            landingCircle.position.copy(landingPosition);
+            landingCircle.position.y = 0.01; // Slightly above ground
+            // Set rotation to lie flat on the ground
+            landingCircle.rotation.x = -Math.PI / 2;
+            
+            // Add the circle to the group
+            landingSpotGroup.add(landingCircle);
+            
+            // Create a smaller inner circle for contrast
+            const innerCircleGeometry = new THREE.CircleGeometry(0.3, 32);
+            const innerCircleMaterial = new THREE.MeshBasicMaterial({
+                color: 0xFFFFFF, // White
+                opacity: 0.9,
+                transparent: true,
+                side: THREE.DoubleSide
+            });
+            const innerCircle = new THREE.Mesh(innerCircleGeometry, innerCircleMaterial);
+            
+            // Position the inner circle at the landing spot
+            innerCircle.position.copy(landingPosition);
+            // Raise it just slightly above the outer circle
+            innerCircle.position.y = 0.011;
+            innerCircle.rotation.x = -Math.PI / 2;
+            
+            // Add the inner circle to the group
+            landingSpotGroup.add(innerCircle);
+            
+            // Create a pulsing ring for added visibility
+            const ringGeometry = new THREE.RingGeometry(0.8, 1.0, 32);
+            const ringMaterial = new THREE.MeshBasicMaterial({
+                color: 0xFF6600, // Bright orange
+                opacity: 0.5,
+                transparent: true,
+                side: THREE.DoubleSide
+            });
+            const pulsingRing = new THREE.Mesh(ringGeometry, ringMaterial);
+            
+            // Position the ring at the landing spot
+            pulsingRing.position.copy(landingPosition);
+            // Raise it just slightly above the other elements
+            pulsingRing.position.y = 0.012;
+            pulsingRing.rotation.x = -Math.PI / 2;
+            
+            // Add the pulsing ring to the group
+            landingSpotGroup.add(pulsingRing);
+            
+            // Store the creation time for animation
+            landingSpotGroup.userData.creationTime = Date.now();
+            landingSpotGroup.userData.pulsingRing = pulsingRing;
+            
+            // Add the landing spot group to the scene
+            this.scene.add(landingSpotGroup);
+            
+            // Store the landing spot group with the trajectory line for cleanup
+            trajectoryLine.userData.landingSpot = landingSpotGroup;
+        }
         
         return trajectoryLine;
     }
@@ -480,6 +609,11 @@ class Football {
             // Remove the trajectory line if it exists
             if (ball.trajectoryLine) {
                 this.scene.remove(ball.trajectoryLine);
+                
+                // Remove the landing spot marker if it exists
+                if (ball.trajectoryLine.userData.landingSpot) {
+                    this.scene.remove(ball.trajectoryLine.userData.landingSpot);
+                }
             }
             
             // Remove the ball from the array
