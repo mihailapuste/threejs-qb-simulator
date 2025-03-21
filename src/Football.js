@@ -13,19 +13,23 @@ class Football {
     }
 
     init() {
-        // Create football mesh - use ellipsoid shape for American football
-        const radiusX = 0.08; // narrower on the sides
-        const radiusY = 0.12; // taller in the middle
-        const radiusZ = 0.2;  // longer front to back
+        // Create a football shape (ellipsoid)
+        // American football is more elongated along z-axis, but circular in x-y plane
+        const radiusX = 0.1;  // Same as radiusY for circular front profile
+        const radiusY = 0.1;  // Height
+        const radiusZ = 0.2;  // Length (elongated)
         
-        // Create the football shape
-        const footballGeometry = new THREE.SphereGeometry(1, 32, 16);
-        footballGeometry.scale(radiusX, radiusY, radiusZ);
+        // Create football geometry - circular from front view, oval from top view
+        const footballGeometry = new THREE.SphereGeometry(radiusY, 32, 16);
         
-        // Create the material with a football texture
-        const footballMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x8B4513,  // Brown
-            roughness: 0.7
+        // Scale the sphere to create the football shape
+        footballGeometry.scale(1.0, 1.0, 2.0); // Only stretch in Z direction
+        
+        // Create football material
+        const footballMaterial = new THREE.MeshStandardMaterial({
+            color: 0x8B4513,  // Brown color
+            roughness: 0.8,
+            metalness: 0.1
         });
         
         this.mesh = new THREE.Mesh(footballGeometry, footballMaterial);
@@ -189,8 +193,8 @@ class Football {
         thrownFootball.quaternion.copy(initialQuaternion);
         
         // Create a new physics body for the thrown football
-        const radiusX = 0.08;
-        const radiusY = 0.12;
+        const radiusX = 0.1;
+        const radiusY = 0.1;
         const radiusZ = 0.2;
         const physicsRadius = (radiusX + radiusY + radiusZ) / 3;
         
