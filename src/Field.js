@@ -53,19 +53,34 @@ class Field {
             this.scene.add(line);
         }
         
-        // Add yard numbers
-        for (let i = 10; i <= 90; i += 10) {
-            if (i === 50) continue; // Skip the 50 yard line (it's obvious)
+        // Add yard numbers in NFL style (G, 10, 20, 30, 40, 50, 40, 30, 20, 10, G)
+        const yardMarkers = [
+            { position: -50, text: "G" },  // Goal line
+            { position: -40, text: "10" }, // 10 yard line
+            { position: -30, text: "20" }, // 20 yard line
+            { position: -20, text: "30" }, // 30 yard line
+            { position: -10, text: "40" }, // 40 yard line
+            { position: 0, text: "50" },   // 50 yard line
+            { position: 10, text: "40" },  // 40 yard line (other side)
+            { position: 20, text: "30" },  // 30 yard line (other side)
+            { position: 30, text: "20" },  // 20 yard line (other side)
+            { position: 40, text: "10" },  // 10 yard line (other side)
+            { position: 50, text: "G" }    // Goal line (other side)
+        ];
+        
+        yardMarkers.forEach(marker => {
+            // Skip the 50 yard line if desired
+            // if (marker.position === 0) return;
             
             const yardNumber = document.createElement('canvas');
-            yardNumber.width = 64;
-            yardNumber.height = 64;
+            yardNumber.width = 128;
+            yardNumber.height = 128;
             const context = yardNumber.getContext('2d');
             context.fillStyle = 'white';
-            context.font = 'bold 48px Arial';
+            context.font = 'bold 96px Arial';
             context.textAlign = 'center';
             context.textBaseline = 'middle';
-            context.fillText(i.toString(), 32, 32);
+            context.fillText(marker.text, 64, 64);
             
             const numberTexture = new THREE.CanvasTexture(yardNumber);
             const numberMaterial = new THREE.MeshBasicMaterial({ 
@@ -74,19 +89,20 @@ class Field {
                 side: THREE.DoubleSide
             });
             
-            const numberGeometry = new THREE.PlaneGeometry(2, 2);
+            const numberGeometry = new THREE.PlaneGeometry(3, 3);
             const numberMesh = new THREE.Mesh(numberGeometry, numberMaterial);
             
             // Position the number on the field
             numberMesh.rotation.x = -Math.PI / 2;
-            numberMesh.position.set(i - 50, 0.02, 10); // On one side
+            numberMesh.position.set(marker.position, 0.02, 15); // On one side
             this.scene.add(numberMesh);
             
             // Add another on the opposite side
             const numberMesh2 = numberMesh.clone();
-            numberMesh2.position.set(i - 50, 0.02, -10);
+            numberMesh2.position.set(marker.position, 0.02, -15);
+            numberMesh2.rotation.z = Math.PI; // Rotate 180 degrees so it's readable from the other side
             this.scene.add(numberMesh2);
-        }
+        });
     }
     
     addEndZones() {
