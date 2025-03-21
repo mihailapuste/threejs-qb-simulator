@@ -147,9 +147,10 @@ document.getElementById('game-container').appendChild(pauseMenu);
 // Scene setup
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87CEEB); // Sky blue
+scene.fog = new THREE.Fog(0x87CEEB, 100, 1000); // Color matches sky, starts at 100 units, ends at 1000 units
 
 // Camera setup
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const camera = new THREE.PerspectiveCamera(85, window.innerWidth / window.innerHeight, 0.1, 2000);
 
 // Renderer setup
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -194,10 +195,12 @@ document.getElementById('resume-button').addEventListener('click', () => {
 
 // Lighting
 function setupLighting() {
-    const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.7); // Increased ambient light
+    // Increased ambient light for better overall visibility
+    const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.8);
     scene.add(ambientLight);
     
-    const directionalLight = new THREE.DirectionalLight(0xFFFFFF, 0.8);
+    // Main directional light (sun)
+    const directionalLight = new THREE.DirectionalLight(0xFFFFFF, 1.0);
     directionalLight.position.set(50, 100, 0);
     directionalLight.castShadow = true;
     directionalLight.shadow.mapSize.width = 2048;
@@ -207,6 +210,20 @@ function setupLighting() {
     directionalLight.shadow.camera.top = 100;
     directionalLight.shadow.camera.bottom = -100;
     scene.add(directionalLight);
+    
+    // Additional directional light from behind to highlight the field
+    const backLight = new THREE.DirectionalLight(0xFFFFFF, 0.4);
+    backLight.position.set(-50, 80, -100);
+    scene.add(backLight);
+    
+    // Add a spotlight to illuminate the field ahead
+    const spotLight = new THREE.SpotLight(0xFFFFFF, 0.6);
+    spotLight.position.set(0, 50, -50);
+    spotLight.angle = Math.PI / 4;
+    spotLight.penumbra = 0.1;
+    spotLight.decay = 1;
+    spotLight.distance = 200;
+    scene.add(spotLight);
 }
 
 // Initialize game

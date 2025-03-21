@@ -17,7 +17,9 @@ class Field {
         const fieldGeometry = new THREE.PlaneGeometry(120, 53.3); // NFL field dimensions in yards
         const fieldMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x355E3B,  // Field green
-            roughness: 0.8
+            roughness: 0.8,
+            emissive: 0x112211, // Slight emissive glow to make it more visible
+            emissiveIntensity: 0.1
         });
         this.field = new THREE.Mesh(fieldGeometry, fieldMaterial);
         this.field.rotation.x = -Math.PI / 2;
@@ -33,6 +35,7 @@ class Field {
         this.world.addBody(this.fieldBody);
         
         this.addYardLines();
+        this.addEndZones();
         this.addReceiver();
     }
 
@@ -40,11 +43,79 @@ class Field {
         // Add yard lines
         for (let i = 0; i <= 100; i += 10) {
             const lineGeometry = new THREE.BoxGeometry(0.2, 0.01, 53.3);
-            const lineMaterial = new THREE.MeshStandardMaterial({ color: 0xFFFFFF });
+            const lineMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xFFFFFF,
+                emissive: 0xFFFFFF,
+                emissiveIntensity: 0.2
+            });
             const line = new THREE.Mesh(lineGeometry, lineMaterial);
             line.position.set(i - 50, 0.01, 0);
             this.scene.add(line);
         }
+        
+        // Add yard numbers
+        for (let i = 10; i <= 90; i += 10) {
+            if (i === 50) continue; // Skip the 50 yard line (it's obvious)
+            
+            const yardNumber = document.createElement('canvas');
+            yardNumber.width = 64;
+            yardNumber.height = 64;
+            const context = yardNumber.getContext('2d');
+            context.fillStyle = 'white';
+            context.font = 'bold 48px Arial';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(i.toString(), 32, 32);
+            
+            const numberTexture = new THREE.CanvasTexture(yardNumber);
+            const numberMaterial = new THREE.MeshBasicMaterial({ 
+                map: numberTexture,
+                transparent: true,
+                side: THREE.DoubleSide
+            });
+            
+            const numberGeometry = new THREE.PlaneGeometry(2, 2);
+            const numberMesh = new THREE.Mesh(numberGeometry, numberMaterial);
+            
+            // Position the number on the field
+            numberMesh.rotation.x = -Math.PI / 2;
+            numberMesh.position.set(i - 50, 0.02, 10); // On one side
+            this.scene.add(numberMesh);
+            
+            // Add another on the opposite side
+            const numberMesh2 = numberMesh.clone();
+            numberMesh2.position.set(i - 50, 0.02, -10);
+            this.scene.add(numberMesh2);
+        }
+    }
+    
+    addEndZones() {
+        // Add end zones (red and blue)
+        const endZoneGeometry = new THREE.PlaneGeometry(10, 53.3);
+        
+        // Red end zone
+        const redEndZoneMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xCC0000,
+            roughness: 0.8,
+            emissive: 0x330000,
+            emissiveIntensity: 0.1
+        });
+        const redEndZone = new THREE.Mesh(endZoneGeometry, redEndZoneMaterial);
+        redEndZone.rotation.x = -Math.PI / 2;
+        redEndZone.position.set(-55, 0.01, 0);
+        this.scene.add(redEndZone);
+        
+        // Blue end zone
+        const blueEndZoneMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x0000CC,
+            roughness: 0.8,
+            emissive: 0x000033,
+            emissiveIntensity: 0.1
+        });
+        const blueEndZone = new THREE.Mesh(endZoneGeometry, blueEndZoneMaterial);
+        blueEndZone.rotation.x = -Math.PI / 2;
+        blueEndZone.position.set(55, 0.01, 0);
+        this.scene.add(blueEndZone);
     }
 
     addReceiver() {
