@@ -23,6 +23,14 @@ class Football {
         // Modify the vertices to create more pointed ends
         const positions = footballGeometry.attributes.position;
         
+        // Create a color attribute for vertex coloring
+        const colors = new THREE.Float32BufferAttribute(positions.count * 3, 3);
+        
+        // Base color for the football (medium brown)
+        const baseColor = new THREE.Color(0x8B4513);
+        // Darker color for the tips (darker brown)
+        const tipColor = new THREE.Color(0x5D2906);
+        
         for (let i = 0; i < positions.count; i++) {
             const x = positions.getX(i);
             const y = positions.getY(i);
@@ -40,14 +48,25 @@ class Football {
             positions.setX(i, x * scaleFactor);
             positions.setY(i, y * scaleFactor);
             positions.setZ(i, newZ);
+            
+            // Calculate color based on position
+            // The closer to the tips, the darker the color
+            const tipFactor = Math.pow(Math.abs(newZ) / length, 1.5);
+            const color = new THREE.Color().lerpColors(baseColor, tipColor, tipFactor);
+            
+            // Set the color for this vertex
+            colors.setXYZ(i, color.r, color.g, color.b);
         }
+        
+        // Add the color attribute to the geometry
+        footballGeometry.setAttribute('color', colors);
         
         // Update the geometry
         footballGeometry.computeVertexNormals();
         
-        // Create football material
+        // Create football material with vertex colors enabled
         const footballMaterial = new THREE.MeshStandardMaterial({
-            color: 0x8B4513,  // Brown color
+            vertexColors: true,
             roughness: 0.8,
             metalness: 0.1
         });
