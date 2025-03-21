@@ -82,9 +82,9 @@ class Football {
         
         // Add stitches to make the lace more visible
         const stitchMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
-        const stitchWidth = 0.0025;
-        const stitchHeight = 0.0015; // Reduced from 0.005 to 0.0025 (half height)
-        const stitchDepth = 0.015;
+        const stitchWidth = 0.0015; // Even narrower
+        const stitchHeight = 0.0005; // Extremely thin
+        const stitchDepth = 0.004; // Very short
         const numStitches = 8;
         
         // Create stitches along the curve
@@ -101,7 +101,10 @@ class Football {
             const stitch = new THREE.Mesh(stitchGeometry, stitchMaterial);
             
             // Position the stitch at the point on the curve
-            stitch.position.copy(point);
+            // Offset even less to make it barely visible above the surface
+            const normal = new THREE.Vector3(0, 1, 0).cross(tangent).normalize();
+            const offsetPoint = point.clone().add(normal.multiplyScalar(0.0005));
+            stitch.position.copy(offsetPoint);
             
             // Orient the stitch to follow the curve
             // Create a quaternion that rotates from the default orientation to align with the tangent
