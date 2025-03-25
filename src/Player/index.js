@@ -1,10 +1,13 @@
 import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 class Player {
-    constructor(camera, renderer) {
+    constructor(camera, renderer, world) {
         this.camera = camera;
         this.renderer = renderer;
+        this.world = world; // Physics world
         this.controls = null;
         this.throwPower = 0;
         this.maxThrowPower = 100;
@@ -19,10 +22,12 @@ class Player {
         this.moveRight = false;
         this.velocity = new THREE.Vector3();
         this.direction = new THREE.Vector3();
-        this.moveSpeed = 5.0;
+        this.moveSpeed = 1.5; // Reduced from 5.0 to make movement slower
         
-        // Body parts
+        // Player model
         this.bodyGroup = null;
+        this.playerModel = null;
+        this.body = null; // Physics body
         
         // New football request flag
         this.requestNewFootball = false;
@@ -31,14 +36,27 @@ class Player {
     }
 
     init() {
-        // Set up camera for first person view
-        this.camera.position.set(0, 1.7, 0); // Eye level
+        // Create a group for the player body
+        this.bodyGroup = new THREE.Group();
         
-        // Set up controls - using PointerLockControls instead of FirstPersonControls
+        // Get the scene from the camera
+        const scene = this.camera.parent;
+        if (!scene) {
+            console.error("Camera is not added to a scene yet");
+            return;
+        }
+        
+        // Add the body group to the scene
+        scene.add(this.bodyGroup);
+        
+        // Set up camera for first person view - positioned at face level and forward
+        this.camera.position.set(0, 1.9, 0); // Eye level, moved forward
+        
+        // Load the player model
+        this.loadPlayerModel();
+        
+        // Set up controls - using PointerLockControls
         this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
-        
-        // Create player body
-        this.createPlayerBody();
         
         // Add event listeners for keyboard controls
         document.addEventListener('keydown', this.onKeyDown.bind(this));
@@ -48,128 +66,65 @@ class Player {
         this.renderer.domElement.addEventListener('click', () => {
             this.controls.lock();
         });
+        
+        // Create physics body
+        this.createPhysicsBody();
     }
     
-    createPlayerBody() {
-        // Get the scene from the camera
-        const scene = this.camera.parent;
-        if (!scene) {
-            console.error("Camera is not added to a scene yet");
-            return;
-        }
+    loadPlayerModel() {
+        const loader = new GLTFLoader();
         
-        // Create a group for the player body
-        this.bodyGroup = new THREE.Group();
-        
-        // Create torso (orange jersey)
-        const torsoGeometry = new THREE.CylinderGeometry(0.2, 0.25, 0.7, 16);
-        const torsoMaterial = new THREE.MeshLambertMaterial({ 
-            color: 0xFF5500, // Orange color for jersey
-            transparent: false
-        });
-        const torso = new THREE.Mesh(torsoGeometry, torsoMaterial);
-        torso.position.y = 0.9; // Position at chest height
-        torso.rotation.x = Math.PI / 12; // Slight forward tilt
-        this.bodyGroup.add(torso);
-        
-        // Add jersey number (white "1")
-        const jerseyNumberGeometry = new THREE.PlaneGeometry(0.15, 0.2);
-        const jerseyNumberMaterial = new THREE.MeshBasicMaterial({
-            color: 0xFFFFFF,
-            transparent: true,
-            opacity: 0.9,
-            side: THREE.DoubleSide
-        });
-        const jerseyNumber = new THREE.Mesh(jerseyNumberGeometry, jerseyNumberMaterial);
-        jerseyNumber.position.set(0, 1.0, 0.21); // Center on chest
-        jerseyNumber.rotation.x = Math.PI / 12; // Match torso tilt
-        this.bodyGroup.add(jerseyNumber);
-        
-        // Add lightning bolt logo (yellow)
-        const logoGeometry = new THREE.PlaneGeometry(0.1, 0.15);
-        const logoMaterial = new THREE.MeshBasicMaterial({
-            color: 0xFFFF00,
-            transparent: true,
-            opacity: 0.9,
-            side: THREE.DoubleSide
-        });
-        const logo = new THREE.Mesh(logoGeometry, logoMaterial);
-        logo.position.set(0.1, 1.0, 0.22); // Right side of chest
-        logo.rotation.x = Math.PI / 12; // Match torso tilt
-        this.bodyGroup.add(logo);
-        
-        // Create arms (orange jersey)
-        const armMaterial = new THREE.MeshLambertMaterial({ color: 0xFF5500 }); // Orange
-        
-        // Left arm
-        const leftArmGeometry = new THREE.CylinderGeometry(0.08, 0.06, 0.6, 16);
-        const leftArm = new THREE.Mesh(leftArmGeometry, armMaterial);
-        leftArm.position.set(-0.3, 0.9, 0);
-        leftArm.rotation.z = Math.PI / 6; // Angle the arm outward
-        this.bodyGroup.add(leftArm);
-        
-        // Right arm
-        const rightArmGeometry = new THREE.CylinderGeometry(0.08, 0.06, 0.6, 16);
-        const rightArm = new THREE.Mesh(rightArmGeometry, armMaterial);
-        rightArm.position.set(0.3, 0.9, 0);
-        rightArm.rotation.z = -Math.PI / 6; // Angle the arm outward
-        this.bodyGroup.add(rightArm);
-        
-        // Add gloves (black)
-        const gloveMaterial = new THREE.MeshLambertMaterial({ color: 0x222222 });
-        
-        // Left glove
-        const leftGloveGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.15);
-        const leftGlove = new THREE.Mesh(leftGloveGeometry, gloveMaterial);
-        leftGlove.position.set(-0.5, 0.7, 0);
-        this.bodyGroup.add(leftGlove);
-        
-        // Right glove
-        const rightGloveGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.15);
-        const rightGlove = new THREE.Mesh(rightGloveGeometry, gloveMaterial);
-        rightGlove.position.set(0.5, 0.7, 0);
-        this.bodyGroup.add(rightGlove);
-        
-        // Create legs (white/gray pants)
-        const legMaterial = new THREE.MeshLambertMaterial({ color: 0xCCCCCC });
-        
-        // Left leg
-        const leftLegGeometry = new THREE.CylinderGeometry(0.12, 0.1, 0.9, 16);
-        const leftLeg = new THREE.Mesh(leftLegGeometry, legMaterial);
-        leftLeg.position.set(-0.15, 0.45, 0);
-        this.bodyGroup.add(leftLeg);
-        
-        // Right leg
-        const rightLegGeometry = new THREE.CylinderGeometry(0.12, 0.1, 0.9, 16);
-        const rightLeg = new THREE.Mesh(rightLegGeometry, legMaterial);
-        rightLeg.position.set(0.15, 0.45, 0);
-        this.bodyGroup.add(rightLeg);
-        
-        // Add feet (black cleats)
-        const footMaterial = new THREE.MeshLambertMaterial({ color: 0x222222 });
-        
-        // Left foot
-        const leftFootGeometry = new THREE.BoxGeometry(0.15, 0.1, 0.3);
-        const leftFoot = new THREE.Mesh(leftFootGeometry, footMaterial);
-        leftFoot.position.set(-0.15, 0, 0.1);
-        this.bodyGroup.add(leftFoot);
-        
-        // Right foot
-        const rightFootGeometry = new THREE.BoxGeometry(0.15, 0.1, 0.3);
-        const rightFoot = new THREE.Mesh(rightFootGeometry, footMaterial);
-        rightFoot.position.set(0.15, 0, 0.1);
-        this.bodyGroup.add(rightFoot);
-        
-        // Add the body to the scene
-        scene.add(this.bodyGroup);
-        
-        // Set initial position
-        const cameraPosition = new THREE.Vector3();
-        this.camera.getWorldPosition(cameraPosition);
-        this.bodyGroup.position.x = cameraPosition.x;
-        this.bodyGroup.position.z = cameraPosition.z;
+        // Load the player GLB file
+        loader.load(
+            // Resource URL
+            '/src/Player/components/quarterback.glb',
+            
+            // Called when the resource is loaded
+            (gltf) => {
+                // Get the model from the loaded GLTF
+                this.playerModel = gltf.scene;
+                
+                // Scale the model to match the receiver (1.7)
+                this.playerModel.scale.set(1.7, 1.7, 1.7);
+                
+                // Adjust material properties if needed
+                this.playerModel.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        
+                        // Make sure materials are available for highlighting
+                        if (!child.material.emissive) {
+                            child.material = new THREE.MeshStandardMaterial({
+                                color: child.material.color || 0x0000FF,
+                                map: child.material.map || null
+                            });
+                        }
+                    }
+                });
+                
+                // Add the model to our body group
+                this.bodyGroup.add(this.playerModel);
+                
+                // Position the model correctly
+                this.playerModel.position.y = 0; // Adjust as needed to make feet touch ground
+                
+                // Update the body group position to match camera
+                this.updateBodyPosition();
+            },
+            
+            // Called while loading is progressing
+            (xhr) => {
+                console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+            },
+            
+            // Called when loading has errors
+            (error) => {
+                console.error('An error happened loading the player model:', error);
+            }
+        );
     }
-    
+  
     onKeyDown(event) {
         switch (event.code) {
             case 'ArrowUp':
@@ -292,45 +247,93 @@ class Player {
         return false;
     }
 
-    update(delta) {
-        // Only update movement when controls are locked
-        if (this.controls.isLocked) {
-            // Calculate velocity based on key presses
-            this.velocity.x = 0;
-            this.velocity.z = 0;
-            
-            this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
-            this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
-            this.direction.normalize();
-            
-            // Move in the direction the camera is facing
-            if (this.moveForward || this.moveBackward) {
-                this.velocity.z = this.direction.z * this.moveSpeed * delta;
-            }
-            if (this.moveLeft || this.moveRight) {
-                this.velocity.x = this.direction.x * this.moveSpeed * delta;
-            }
-            
-            // Apply movement
-            this.controls.moveRight(this.velocity.x);
-            this.controls.moveForward(this.velocity.z);
-            
-            // Update body position to match camera
-            if (this.bodyGroup) {
-                const cameraPosition = new THREE.Vector3();
-                this.camera.getWorldPosition(cameraPosition);
-                this.bodyGroup.position.x = cameraPosition.x;
-                this.bodyGroup.position.z = cameraPosition.z;
-                
-                // Update body rotation to match camera direction
-                const cameraDirection = new THREE.Vector3();
-                this.camera.getWorldDirection(cameraDirection);
-                this.bodyGroup.rotation.y = Math.atan2(cameraDirection.x, cameraDirection.z);
-            }
+    update(deltaTime) {
+        if (!this.controls.isLocked) {
+            return;
         }
         
-        // Update throw power
-        this.updateThrowPower();
+        // Handle throw charging
+        if (this.throwing && !this.throwReleased) {
+            this.throwPower = Math.min(this.throwPower + this.throwChargeRate, this.maxThrowPower);
+        }
+        
+        // Handle movement
+        this.velocity.x -= this.velocity.x * 10.0 * deltaTime;
+        this.velocity.z -= this.velocity.z * 10.0 * deltaTime;
+        
+        this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
+        this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
+        this.direction.normalize();
+        
+        if (this.moveForward || this.moveBackward) {
+            this.velocity.z -= this.direction.z * this.moveSpeed * deltaTime;
+        }
+        if (this.moveLeft || this.moveRight) {
+            this.velocity.x -= this.direction.x * this.moveSpeed * deltaTime;
+        }
+        
+        // Move the camera
+        this.controls.moveRight(-this.velocity.x);
+        this.controls.moveForward(-this.velocity.z);
+        
+        // Update the body position to follow the camera
+        this.updateBodyPosition();
+        
+        // Update physics body position to match visual body
+        if (this.body) {
+            this.body.position.x = this.bodyGroup.position.x;
+            this.body.position.y = this.bodyGroup.position.y + 0.9; // Center of mass is higher
+            this.body.position.z = this.bodyGroup.position.z;
+            
+            // Convert THREE.js rotation to CANNON quaternion
+            const quaternion = new CANNON.Quaternion();
+            quaternion.setFromEuler(0, this.bodyGroup.rotation.y, 0);
+            this.body.quaternion.copy(quaternion);
+        }
+    }
+    
+    updateBodyPosition() {
+        if (this.bodyGroup && this.camera) {
+            // Get the camera's position
+            const cameraPosition = new THREE.Vector3();
+            this.camera.getWorldPosition(cameraPosition);
+            
+            // Calculate position behind the camera (where the body should be)
+            const cameraDirection = new THREE.Vector3(0, 0, -1);
+            cameraDirection.applyQuaternion(this.camera.quaternion);
+            
+            // Move the body position behind the camera by 0.5 units
+            const bodyPosition = cameraPosition.clone();
+            bodyPosition.sub(cameraDirection.multiplyScalar(1));
+            
+            // Update the body group position (keeping the y position unchanged)
+            this.bodyGroup.position.x = bodyPosition.x;
+            this.bodyGroup.position.z = bodyPosition.z;
+            
+            // Rotate the body to match the camera's direction
+            const faceDirection = new THREE.Vector3(0, 0, -1);
+            faceDirection.applyQuaternion(this.camera.quaternion);
+            faceDirection.y = 0; // Keep rotation only in the xz plane
+            faceDirection.normalize();
+            
+            // Set the body rotation to face the same direction as the camera
+            if (faceDirection.length() > 0) {
+                this.bodyGroup.rotation.y = Math.atan2(faceDirection.x, faceDirection.z);
+            }
+        }
+    }
+
+    createPhysicsBody() {
+        // Create a physics body for the player
+        const shape = new CANNON.Cylinder(0.3, 0.3, 1.8, 32); // Match the receiver's shape
+        this.body = new CANNON.Body({
+            mass: 80, // Player has mass (80kg is typical football player)
+            position: new CANNON.Vec3(0, 0.9, 0), // Initial position with height
+            shape: shape
+        });
+        
+        // Add the physics body to the world
+        this.world.addBody(this.body);
     }
 
     handleResize() {

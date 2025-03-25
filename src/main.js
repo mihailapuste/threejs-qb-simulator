@@ -358,7 +358,7 @@ function init() {
     scene.add(camera);
     
     // Create game objects
-    player = new Player(camera, renderer);
+    player = new Player(camera, renderer, world);
     field = new Field(scene, world);
     football = new Football(scene, world, camera, field);
     
