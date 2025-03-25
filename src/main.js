@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import Player from './Player.js';
-import Field from './Field.js';
-import Football from './Football.js';
+import Player from './Player/index.js';
+import Field from './Field/index.js';
+import Football from './Football/index.js';
 
 // Game state
 const gameState = {

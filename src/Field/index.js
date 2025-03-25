@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import Receiver from './Receiver.js';
+import Receiver from '../Receiver';
 
 class Field {
     constructor(scene, world) {
