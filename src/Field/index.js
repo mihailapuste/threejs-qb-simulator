@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import Receiver from '../Receiver';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 class Field {
     constructor(scene, world) {
@@ -9,10 +10,119 @@ class Field {
         this.field = null;
         this.fieldBody = null;
         this.receiver = null;
+        this.stadiumModel = null;
+        this.simpleFieldElements = []; // Store simple field elements for toggling
+        this.showStadium = false; // Default to simple field for testing
         this.init();
     }
 
     init() {
+        // Create field physics (always needed for collision)
+        this.fieldBody = new CANNON.Body({
+            type: CANNON.Body.STATIC,
+            shape: new CANNON.Plane()
+        });
+        this.fieldBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+        this.world.addBody(this.fieldBody);
+        
+        // Load the stadium model but don't display it initially
+        this.loadStadiumModel();
+        
+        // Create the simple field for testing
+        this.createSimpleField();
+        
+        // Create receiver
+        this.receiver = new Receiver(this.scene, this.world);
+    }
+
+    // Toggle between stadium and simple field
+    toggleField() {
+        this.showStadium = !this.showStadium;
+        
+        if (this.showStadium) {
+            // Hide simple field
+            this.simpleFieldElements.forEach(element => {
+                this.scene.remove(element);
+            });
+            
+            // Show stadium if loaded
+            if (this.stadiumModel) {
+                this.scene.add(this.stadiumModel);
+            }
+        } else {
+            // Hide stadium
+            if (this.stadiumModel) {
+                this.scene.remove(this.stadiumModel);
+            }
+            
+            // Show simple field
+            this.simpleFieldElements.forEach(element => {
+                this.scene.add(element);
+            });
+        }
+        
+        console.log(`Field toggled. Stadium ${this.showStadium ? 'shown' : 'hidden'}`);
+        return this.showStadium;
+    }
+
+    loadStadiumModel() {
+        // Use the GLTFLoader to load the stadium model
+        const loader = new GLTFLoader();
+        
+        loader.load(
+            // Resource URL
+            '/src/Field/components/acrisure_stadium_pittsburgh_pa (1).glb',
+            
+            // Called when the resource is loaded
+            (gltf) => {
+                // Get the model from the loaded GLTF
+                this.stadiumModel = gltf.scene;
+                
+                // Scale the model appropriately - stadiums are typically large structures
+                this.stadiumModel.scale.set(1, 1, 1);
+                
+                // Position the model correctly - center it and adjust height
+                this.stadiumModel.position.set(0, 40.5, 0);
+                
+                // Adjust material properties
+                this.stadiumModel.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        
+                        // Make sure materials are available
+                        if (!child.material.emissive) {
+                            child.material = new THREE.MeshStandardMaterial({
+                                color: child.material.color || 0xFFFFFF,
+                                map: child.material.map || null
+                            });
+                        }
+                    }
+                });
+                
+                // Only add to scene if showStadium is true
+                if (this.showStadium) {
+                    this.scene.add(this.stadiumModel);
+                    console.log("Stadium model loaded and displayed");
+                } else {
+                    console.log("Stadium model loaded but hidden (toggle with 'F' key)");
+                }
+            },
+            
+            // Called while loading is progressing
+            (xhr) => {
+                console.log((xhr.loaded / xhr.total * 100) + '% stadium loaded');
+            },
+            
+            // Called when loading has errors
+            (error) => {
+                console.error('An error happened loading the stadium model:', error);
+            }
+        );
+    }
+    
+    createSimpleField() {
+        console.log("Creating simple field for testing");
         // Create field mesh - NCAA field dimensions (120 yards x 53.3 yards)
         const fieldGeometry = new THREE.PlaneGeometry(120, 53.3);
         const fieldMaterial = new THREE.MeshStandardMaterial({ 
@@ -25,23 +135,13 @@ class Field {
         this.field.rotation.x = -Math.PI / 2;
         this.field.receiveShadow = true;
         this.scene.add(this.field);
-        
-        // Field physics
-        this.fieldBody = new CANNON.Body({
-            type: CANNON.Body.STATIC,
-            shape: new CANNON.Plane()
-        });
-        this.fieldBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-        this.world.addBody(this.fieldBody);
+        this.simpleFieldElements.push(this.field);
         
         // Add all field markings in the correct order
         this.addEndZones();
         this.addYardLines();
         this.addHashMarks();
         this.addGoalPosts();
-        
-        // Create receiver
-        this.receiver = new Receiver(this.scene, this.world);
     }
 
     addYardLines() {
@@ -58,6 +158,7 @@ class Field {
                 const line = new THREE.Mesh(lineGeometry, lineMaterial);
                 line.position.set(i - 50, 0.01, 0);
                 this.scene.add(line);
+                this.simpleFieldElements.push(line);
             }
         }
         
@@ -103,12 +204,14 @@ class Field {
             topNumberMesh.rotation.z = Math.PI; // Upside down
             topNumberMesh.position.set(marker.position, 0.02, -15);
             this.scene.add(topNumberMesh);
+            this.simpleFieldElements.push(topNumberMesh);
             
             // Bottom row of numbers (right side up)
             const bottomNumberMesh = new THREE.Mesh(numberGeometry, numberMaterial);
             bottomNumberMesh.rotation.x = -Math.PI / 2;
             bottomNumberMesh.position.set(marker.position, 0.02, 15);
             this.scene.add(bottomNumberMesh);
+            this.simpleFieldElements.push(bottomNumberMesh);
         });
     }
     
@@ -123,11 +226,13 @@ class Field {
             const topHash = new THREE.Mesh(hashGeometry, hashMaterial);
             topHash.position.set(i - 50, 0.01, -10); // Positioned to match reference
             this.scene.add(topHash);
+            this.simpleFieldElements.push(topHash);
             
             // Bottom side hash marks (closer to bottom sideline)
             const bottomHash = new THREE.Mesh(hashGeometry, hashMaterial);
             bottomHash.position.set(i - 50, 0.01, 10); // Positioned to match reference
             this.scene.add(bottomHash);
+            this.simpleFieldElements.push(bottomHash);
         }
     }
     
@@ -148,12 +253,14 @@ class Field {
         leftEndZone.rotation.x = -Math.PI / 2;
         leftEndZone.position.set(-55, 0.01, 0);
         this.scene.add(leftEndZone);
+        this.simpleFieldElements.push(leftEndZone);
         
         // Right end zone
         const rightEndZone = new THREE.Mesh(endZoneGeometry, endZoneMaterial);
         rightEndZone.rotation.x = -Math.PI / 2;
         rightEndZone.position.set(55, 0.01, 0);
         this.scene.add(rightEndZone);
+        this.simpleFieldElements.push(rightEndZone);
         
         // Add "FORZA" text in both end zones (rotated 90 degrees to match image)
         this.addEndZoneText("FORZA", -55, 0xFFFFFF, Math.PI/2);
@@ -184,6 +291,7 @@ class Field {
         textMesh.rotation.z = rotation; // Apply rotation
         textMesh.position.set(position, 0.02, 0);
         this.scene.add(textMesh);
+        this.simpleFieldElements.push(textMesh);
     }
 
     addGoalPosts() {
@@ -199,12 +307,14 @@ class Field {
         const leftPost = new THREE.Mesh(leftPostGeometry, postMaterial);
         leftPost.position.set(-55, 5, 0);
         this.scene.add(leftPost);
+        this.simpleFieldElements.push(leftPost);
         
         // Create right goal post (simple upright)
         const rightPostGeometry = new THREE.CylinderGeometry(0.1, 0.1, 10, 8);
         const rightPost = new THREE.Mesh(rightPostGeometry, postMaterial);
         rightPost.position.set(55, 5, 0);
         this.scene.add(rightPost);
+        this.simpleFieldElements.push(rightPost);
     }
 
     checkCatch(footballBody) {

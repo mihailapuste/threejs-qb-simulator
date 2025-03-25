@@ -140,6 +140,7 @@ controlsInfo.innerHTML = `
     <p>E: Start receiver route</p>
     <p>R: Reset receiver</p>
     <p>T: Open route selection menu</p>
+    <p>F: Toggle field view</p>
 `;
 document.getElementById('game-container').appendChild(controlsInfo);
 
@@ -310,6 +311,10 @@ document.addEventListener('keydown', (event) => {
         // Open route selection menu on T key
         openRouteMenu();
         console.log("Route menu opened");
+    } else if (event.key === 'f' || event.key === 'F') {
+        // Toggle between stadium and simple field
+        const isStadiumShown = field.toggleField();
+        console.log(`Stadium view ${isStadiumShown ? 'enabled' : 'disabled'}`);
     }
 });
 
