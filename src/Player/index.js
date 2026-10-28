@@ -1,19 +1,26 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-
 class Player {
-    constructor(camera, renderer, world) {
+    constructor(camera, renderer, world, options = {}) {
         this.camera = camera;
         this.renderer = renderer;
         this.world = world; // Physics world
+        this.loader = options.loader || null;
+        this.modelUrl = options.modelUrl || '';
+        this.onLoadProgress = options.onLoadProgress || null;
+        this.inputEnabled = false;
         this.controls = null;
+        this.touchMode = options.touch === true;
+        this.touchMoveX = 0;
+        this.touchMoveY = 0;
+        this.touchMoveActive = false;
         this.throwPower = 0;
         this.maxThrowPower = 100;
         this.throwChargeRate = 2;
         this.throwing = false;
         this.throwReleased = false;
+        this._lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
         
         // Movement variables
         this.moveForward = false;
@@ -62,22 +69,32 @@ class Player {
         document.addEventListener('keydown', this.onKeyDown.bind(this));
         document.addEventListener('keyup', this.onKeyUp.bind(this));
         
-        // Lock pointer on click
-        this.renderer.domElement.addEventListener('click', () => {
-            this.controls.lock();
-        });
+        // Lock pointer on click. Touch play aims by dragging and never pointer-locks.
+        // Clicks are ignored until both player models have finished loading.
+        if (!this.touchMode) {
+            this.renderer.domElement.addEventListener('click', () => {
+                if (!this.inputEnabled) return;
+                this.controls.lock();
+            });
+        }
         
         // Create physics body
         this.createPhysicsBody();
     }
     
+    setInputEnabled(enabled) {
+        this.inputEnabled = enabled === true;
+    }
+
     loadPlayerModel() {
-        const loader = new GLTFLoader();
-        
+        if (!this.loader || !this.modelUrl) {
+            console.error('Player model loader is not configured');
+            return;
+        }
+
         // Load the player GLB file
-        loader.load(
-            // Resource URL
-            '/src/Player/components/quarterback.glb',
+        this.loader.load(
+            this.modelUrl,
             
             // Called when the resource is loaded
             (gltf) => {
@@ -115,7 +132,7 @@ class Player {
             
             // Called while loading is progressing
             (xhr) => {
-                console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+                if (this.onLoadProgress) this.onLoadProgress(xhr);
             },
             
             // Called when loading has errors
@@ -126,6 +143,7 @@ class Player {
     }
   
     onKeyDown(event) {
+        if (!this.inputEnabled) return;
         switch (event.code) {
             case 'ArrowUp':
             case 'KeyW':
@@ -145,7 +163,7 @@ class Player {
                 break;
             case 'Space':
                 // Start throw on spacebar press
-                if (!this.throwing && this.controls.isLocked) {
+                if (!this.throwing && this._controlActive()) {
                     this.startThrow();
                 }
                 break;
@@ -158,6 +176,7 @@ class Player {
     }
     
     onKeyUp(event) {
+        if (!this.inputEnabled) return;
         switch (event.code) {
             case 'ArrowUp':
             case 'KeyW':
@@ -184,9 +203,50 @@ class Player {
         }
     }
 
+    _controlActive() {
+        return this.touchMode || (this.controls && this.controls.isLocked);
+    }
+
+    lookBy(deltaX, deltaY) {
+        if (!this.touchMode || !this.camera || !this.controls) return;
+
+        const camera = this.camera;
+        const euler = this._lookEuler;
+        euler.setFromQuaternion(camera.quaternion);
+
+        // Higher than PointerLockControls' 0.002 because a finger drag is
+        // shorter than an unlocked mouse flick. Desktop look is unchanged.
+        const speed = 0.005 * this.controls.pointerSpeed;
+        euler.y -= deltaX * speed;
+        euler.x -= deltaY * speed;
+
+        const minPitch = Math.PI / 2 - this.controls.maxPolarAngle;
+        const maxPitch = Math.PI / 2 - this.controls.minPolarAngle;
+        euler.x = Math.max(minPitch, Math.min(maxPitch, euler.x));
+
+        camera.quaternion.setFromEuler(euler);
+        camera.updateMatrix();
+    }
+
+    setTouchMove(x, y) {
+        this.touchMoveActive = true;
+        this.touchMoveX = x;
+        this.touchMoveY = y;
+    }
+
+    clearTouchMove() {
+        this.touchMoveActive = false;
+        this.touchMoveX = 0;
+        this.touchMoveY = 0;
+    }
+
+    requestNewBall() {
+        this.requestNewFootball = true;
+    }
+
     startThrow() {
-        // Only start throw when controls are locked
-        if (this.controls.isLocked) {
+        // Desktop still requires pointer lock. Touch mode is always active.
+        if (this._controlActive()) {
             this.throwing = true;
             this.throwPower = 0;
             this.throwReleased = false;
@@ -248,7 +308,7 @@ class Player {
     }
 
     update(deltaTime) {
-        if (!this.controls.isLocked) {
+        if (!this.inputEnabled || !this._controlActive()) {
             return;
         }
         
@@ -260,16 +320,32 @@ class Player {
         // Handle movement
         this.velocity.x -= this.velocity.x * 10.0 * deltaTime;
         this.velocity.z -= this.velocity.z * 10.0 * deltaTime;
-        
-        this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
-        this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
-        this.direction.normalize();
-        
-        if (this.moveForward || this.moveBackward) {
-            this.velocity.z -= this.direction.z * this.moveSpeed * deltaTime;
-        }
-        if (this.moveLeft || this.moveRight) {
-            this.velocity.x -= this.direction.x * this.moveSpeed * deltaTime;
+
+        if (this.touchMode && this.touchMoveActive) {
+            let forward = THREE.MathUtils.clamp(this.touchMoveY, -1, 1);
+            let right = THREE.MathUtils.clamp(this.touchMoveX, -1, 1);
+            const length = Math.hypot(right, forward);
+            if (length > 1) {
+                forward /= length;
+                right /= length;
+            }
+            if (Math.abs(forward) > 0.001) {
+                this.velocity.z -= forward * this.moveSpeed * deltaTime;
+            }
+            if (Math.abs(right) > 0.001) {
+                this.velocity.x -= right * this.moveSpeed * deltaTime;
+            }
+        } else {
+            this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
+            this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
+            this.direction.normalize();
+
+            if (this.moveForward || this.moveBackward) {
+                this.velocity.z -= this.direction.z * this.moveSpeed * deltaTime;
+            }
+            if (this.moveLeft || this.moveRight) {
+                this.velocity.x -= this.direction.x * this.moveSpeed * deltaTime;
+            }
         }
         
         // Move the camera

@@ -3,17 +3,107 @@ import * as CANNON from 'cannon-es';
 import Player from './Player/index.js';
 import Field from './Field/index.js';
 import Football from './Football/index.js';
+import { isCoarsePointer, mountTouchControls } from './touch/controls.js';
+import { createPlayerModelLoader, modelUrls } from './loading/assets.js';
+
+const touchMode = isCoarsePointer();
+if (touchMode) {
+    document.documentElement.classList.add('touch-mode');
+}
 
 // Game state
 const gameState = {
     receiverCaught: false,
     paused: false,
     score: 0,
-    catches: 0
+    catches: 0,
+    ready: false
 };
 
 // DOM elements
 const loadingScreen = document.getElementById('loading-screen');
+const loadingPercent = document.getElementById('loading-percent');
+const loadingBar = document.getElementById('loading-bar');
+const loadingStatus = document.getElementById('loading-status');
+const gameContainer = document.getElementById('game-container');
+
+const {
+    manager: loadingManager,
+    loader: modelLoader,
+    record: recordModelBytes,
+    noteItems,
+    getProgress
+} = createPlayerModelLoader();
+let touchControlsMounted = false;
+let loadFailed = false;
+
+function formatMegabytes(bytes) {
+    return Math.round((Number(bytes) || 0) / 1_000_000);
+}
+
+function renderLoadProgress() {
+    const { loaded, total, percent } = getProgress();
+    if (loadingPercent) loadingPercent.textContent = `${percent}%`;
+    if (loadingBar) loadingBar.style.width = `${percent}%`;
+    if (loadingStatus) {
+        loadingStatus.textContent = `Getting the players ready… ${formatMegabytes(loaded)} / ${formatMegabytes(total)} MB`;
+    }
+}
+
+function noteModelProgress(url, event) {
+    recordModelBytes(url, event);
+    renderLoadProgress();
+}
+
+loadingManager.onProgress = (_url, itemsLoaded, itemsTotal) => {
+    noteItems(itemsLoaded, itemsTotal);
+    renderLoadProgress();
+};
+
+function revealGame() {
+    if (gameState.ready) return;
+    gameState.ready = true;
+    if (player) player.setInputEnabled(true);
+
+    if (touchMode && !touchControlsMounted) {
+        touchControlsMounted = true;
+        mountTouchControls({
+            player,
+            getPaused: () => gameState.paused,
+            onNewBall: () => player.requestNewBall(),
+            onStartRoute: () => runStartRoute(),
+            onReset: () => runResetReceiver()
+        });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', onWindowResize);
+        }
+    }
+
+    gameContainer.classList.remove('is-loading');
+    loadingScreen.setAttribute('aria-busy', 'false');
+    loadingScreen.classList.add('is-done');
+
+    const hideGate = () => {
+        loadingScreen.setAttribute('aria-hidden', 'true');
+        loadingScreen.style.display = 'none';
+    };
+    loadingScreen.addEventListener('transitionend', hideGate, { once: true });
+    window.setTimeout(hideGate, 450);
+}
+
+loadingManager.onLoad = () => {
+    renderLoadProgress();
+    if (loadFailed) return;
+    revealGame();
+};
+
+loadingManager.onError = (url) => {
+    loadFailed = true;
+    console.error('Failed to load player model:', url);
+    if (loadingStatus) {
+        loadingStatus.textContent = 'Couldn’t load the players. Use Back or refresh to try again.';
+    }
+};
 
 // Create score display
 const scoreDisplay = document.createElement('div');
@@ -148,8 +238,8 @@ document.getElementById('game-container').appendChild(controlsInfo);
 const routeMenu = document.createElement('div');
 routeMenu.id = 'route-menu';
 routeMenu.style.position = 'absolute';
-routeMenu.style.top = '20px';
-routeMenu.style.left = '20px';
+routeMenu.style.top = 'calc(72px + env(safe-area-inset-top, 0px))';
+routeMenu.style.left = 'calc(16px + env(safe-area-inset-left, 0px))';
 routeMenu.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
 routeMenu.style.color = 'white';
 routeMenu.style.padding = '15px';
@@ -209,6 +299,14 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 document.getElementById('game-container').appendChild(renderer.domElement);
+
+if (touchMode) {
+    const canvas = renderer.domElement;
+    canvas.style.touchAction = 'none';
+    canvas.style.userSelect = 'none';
+    canvas.style.webkitUserSelect = 'none';
+    canvas.style.webkitTouchCallout = 'none';
+}
 
 // Physics world
 const world = new CANNON.World({
@@ -280,6 +378,19 @@ window.openRouteMenu = openRouteMenu;
 window.closeRouteMenu = closeRouteMenu;
 window.selectRoute = selectRoute;
 
+function runStartRoute() {
+    const currentRoute = field.startReceiverRoute();
+    if (currentRoute) {
+        routeDisplay.innerHTML = `Route: ${currentRoute.charAt(0).toUpperCase() + currentRoute.slice(1)}`;
+    }
+    console.log("Receiver running route");
+}
+
+function runResetReceiver() {
+    field.resetReceiver();
+    console.log("Receiver reset");
+}
+
 // Pause/resume functionality
 function togglePause() {
     gameState.paused = !gameState.paused;
@@ -288,25 +399,30 @@ function togglePause() {
     if (gameState.paused) {
         // Unlock pointer when pausing
         document.exitPointerLock();
-    } else {
-        // Request pointer lock when resuming
+    } else if (!touchMode) {
+        // Request pointer lock when resuming. Touch play never pointer-locks.
         renderer.domElement.requestPointerLock();
     }
 }
 
 // Event listeners for pause menu
 document.addEventListener('keydown', (event) => {
+    if (!gameState.ready) {
+        const target = event.target;
+        if (!(target && target.closest && target.closest('#back-link'))) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        return;
+    }
     if (event.key === 'Escape') {
         togglePause();
     } else if (event.key === 'e' || event.key === 'E') {
         // Start receiver route on E key
-        const currentRoute = field.startReceiverRoute();
-        routeDisplay.innerHTML = `Route: ${currentRoute.charAt(0).toUpperCase() + currentRoute.slice(1)}`;
-        console.log("Receiver running route");
+        runStartRoute();
     } else if (event.key === 'r' || event.key === 'R') {
         // Reset receiver on R key
-        field.resetReceiver();
-        console.log("Receiver reset");
+        runResetReceiver();
     } else if (event.key === 't' || event.key === 'T') {
         // Open route selection menu on T key
         openRouteMenu();
@@ -321,7 +437,9 @@ document.addEventListener('keydown', (event) => {
 document.getElementById('resume-button').addEventListener('click', () => {
     togglePause();
     // Request pointer lock when clicking resume
-    renderer.domElement.requestPointerLock();
+    if (!touchMode) {
+        renderer.domElement.requestPointerLock();
+    }
 });
 
 // Lighting
@@ -362,15 +480,22 @@ function init() {
     // Add camera to scene first
     scene.add(camera);
     
-    // Create game objects
-    player = new Player(camera, renderer, world);
-    field = new Field(scene, world);
+    // Create game objects. Models load through the shared manager; the gate
+    // stays up until both GLBs have downloaded and decoded.
+    player = new Player(camera, renderer, world, {
+        touch: touchMode,
+        loader: modelLoader,
+        modelUrl: modelUrls.quarterback,
+        onLoadProgress: (event) => noteModelProgress(modelUrls.quarterback, event)
+    });
+    field = new Field(scene, world, {
+        loader: modelLoader,
+        receiverUrl: modelUrls.receiver,
+        onReceiverProgress: (event) => noteModelProgress(modelUrls.receiver, event)
+    });
     football = new Football(scene, world, camera, field);
     
     setupLighting();
-    
-    // Hide loading screen
-    loadingScreen.style.display = 'none';
     
     // Initialize route display with default route
     if (field && field.receiver) {
@@ -379,7 +504,7 @@ function init() {
             routeDisplay.innerHTML = `Route: ${currentRoute.charAt(0).toUpperCase() + currentRoute.slice(1)}`;
         }
     }
-    
+
     // Event listeners
     window.addEventListener('resize', onWindowResize);
     // Note: Player class already sets up its own event listeners
@@ -387,9 +512,15 @@ function init() {
 
 // Handle window resize
 function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    if (touchMode && window.visualViewport) {
+        width = window.visualViewport.width;
+        height = window.visualViewport.height;
+    }
+    camera.aspect = width / height;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(width, height);
     player.handleResize();
 }
 

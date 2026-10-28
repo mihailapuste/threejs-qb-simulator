@@ -2,12 +2,13 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <title>QB Game - First Person Quarterback</title>
     <link rel="stylesheet" href="styles/style.css">
 </head>
 <body>
-    <div id="game-container">
+    <div id="game-container" class="is-loading">
+        <a id="back-link" href="/projects?p=qb-simulator">← Back</a>
         <div id="ui-overlay">
             <div id="power-meter">
                 <div id="power-bar"></div>
@@ -18,7 +19,13 @@
                 <p>Press ESC to pause the game</p>
             </div>
         </div>
-        <div id="loading-screen">Loading...</div>
+        <div id="loading-screen" role="status" aria-live="polite" aria-busy="true">
+            <div id="loading-panel">
+                <div id="loading-percent">0%</div>
+                <div id="loading-track" aria-hidden="true"><div id="loading-bar"></div></div>
+                <p id="loading-status">Getting the players ready… 0 / 0 MB</p>
+            </div>
+        </div>
     </div>
     <script type="module" src="src/main.js"></script>
 </body>
