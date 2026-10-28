@@ -89,3 +89,180 @@ body {
 #resume-button:hover {
     background-color: #45a049;
 }
+
+/* Touch UI is mounted only when the primary pointer is coarse. */
+html.touch-mode,
+html.touch-mode body {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html.touch-mode #game-container {
+    height: 100%;
+    height: 100dvh;
+    touch-action: none;
+}
+
+html.touch-mode canvas,
+html.touch-mode #touch-ui,
+html.touch-mode #touch-ui * {
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+html.touch-mode #controls-info {
+    display: none;
+}
+
+html.touch-mode #power-meter {
+    display: none;
+}
+
+html.touch-mode #instructions {
+    top: calc(10px + env(safe-area-inset-top, 0px));
+    max-width: min(420px, 72vw);
+    background: rgba(27, 27, 27, 0.72);
+    color: #f4f4f4;
+    border: 1px solid rgba(220, 247, 99, 0.55);
+    border-radius: 10px;
+    font-family: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 13px;
+    line-height: 1.35;
+    pointer-events: none;
+    z-index: 230;
+}
+
+html.touch-mode #instructions p {
+    margin: 2px 0;
+}
+
+html.touch-mode #throw-power-indicator {
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    pointer-events: none;
+    z-index: 230;
+}
+
+html.touch-mode #resume-button {
+    min-width: 44px;
+    min-height: 44px;
+    font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    touch-action: none;
+}
+
+#touch-ui {
+    position: absolute;
+    inset: 0;
+    z-index: 220;
+    pointer-events: none;
+    font-family: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+#touch-look {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 50%;
+    height: 100%;
+    pointer-events: auto;
+    touch-action: none;
+}
+
+#touch-throw {
+    position: absolute;
+    right: 16px;
+    right: calc(16px + env(safe-area-inset-right, 0px));
+    bottom: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    z-index: 3;
+    width: 76px;
+    height: 76px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid #DCF763;
+    background: rgba(27, 27, 27, 0.72);
+    color: #DCF763;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    pointer-events: auto;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#touch-throw.is-active {
+    background: #DCF763;
+    color: #1B1B1B;
+}
+
+#touch-rotate-hint {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    background: rgba(27, 27, 27, 0.94);
+    color: #f4f4f4;
+    pointer-events: auto;
+    touch-action: none;
+    text-align: center;
+}
+
+#touch-ui.is-portrait #touch-rotate-hint {
+    display: flex;
+}
+
+#touch-rotate-hint p {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+}
+
+.touch-rotate-phone {
+    width: 42px;
+    height: 68px;
+    border: 2px solid #DCF763;
+    border-radius: 8px;
+    position: relative;
+}
+
+.touch-rotate-phone::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 28px;
+    height: 28px;
+    margin: -14px 0 0 -14px;
+    border: 2px solid #DCF763;
+    border-left-color: transparent;
+    border-radius: 50%;
+    transform: rotate(-40deg);
+}
+
+.touch-rotate-phone::after {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 2px;
+    background: #DCF763;
+    left: 50%;
+    bottom: 8px;
+    transform: translateX(-50%);
+}

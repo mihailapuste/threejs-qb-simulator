@@ -4,16 +4,18 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 class Player {
-    constructor(camera, renderer, world) {
+    constructor(camera, renderer, world, options = {}) {
         this.camera = camera;
         this.renderer = renderer;
         this.world = world; // Physics world
         this.controls = null;
+        this.touchMode = options.touch === true;
         this.throwPower = 0;
         this.maxThrowPower = 100;
         this.throwChargeRate = 2;
         this.throwing = false;
         this.throwReleased = false;
+        this._lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
         
         // Movement variables
         this.moveForward = false;
@@ -62,10 +64,12 @@ class Player {
         document.addEventListener('keydown', this.onKeyDown.bind(this));
         document.addEventListener('keyup', this.onKeyUp.bind(this));
         
-        // Lock pointer on click
-        this.renderer.domElement.addEventListener('click', () => {
-            this.controls.lock();
-        });
+        // Lock pointer on click. Touch play aims by dragging and never pointer-locks.
+        if (!this.touchMode) {
+            this.renderer.domElement.addEventListener('click', () => {
+                this.controls.lock();
+            });
+        }
         
         // Create physics body
         this.createPhysicsBody();
@@ -145,7 +149,7 @@ class Player {
                 break;
             case 'Space':
                 // Start throw on spacebar press
-                if (!this.throwing && this.controls.isLocked) {
+                if (!this.throwing && this._controlActive()) {
                     this.startThrow();
                 }
                 break;
@@ -184,9 +188,34 @@ class Player {
         }
     }
 
+    _controlActive() {
+        return this.touchMode || (this.controls && this.controls.isLocked);
+    }
+
+    lookBy(deltaX, deltaY) {
+        if (!this.touchMode || !this.camera || !this.controls) return;
+
+        const camera = this.camera;
+        const euler = this._lookEuler;
+        euler.setFromQuaternion(camera.quaternion);
+
+        // Higher than PointerLockControls' 0.002 because a finger drag is
+        // shorter than an unlocked mouse flick. Desktop look is unchanged.
+        const speed = 0.005 * this.controls.pointerSpeed;
+        euler.y -= deltaX * speed;
+        euler.x -= deltaY * speed;
+
+        const minPitch = Math.PI / 2 - this.controls.maxPolarAngle;
+        const maxPitch = Math.PI / 2 - this.controls.minPolarAngle;
+        euler.x = Math.max(minPitch, Math.min(maxPitch, euler.x));
+
+        camera.quaternion.setFromEuler(euler);
+        camera.updateMatrix();
+    }
+
     startThrow() {
-        // Only start throw when controls are locked
-        if (this.controls.isLocked) {
+        // Desktop still requires pointer lock. Touch mode is always active.
+        if (this._controlActive()) {
             this.throwing = true;
             this.throwPower = 0;
             this.throwReleased = false;
@@ -248,7 +277,7 @@ class Player {
     }
 
     update(deltaTime) {
-        if (!this.controls.isLocked) {
+        if (!this._controlActive()) {
             return;
         }
         

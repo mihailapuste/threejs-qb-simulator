@@ -3,6 +3,12 @@ import * as CANNON from 'cannon-es';
 import Player from './Player/index.js';
 import Field from './Field/index.js';
 import Football from './Football/index.js';
+import { isCoarsePointer, mountTouchControls } from './touch/controls.js';
+
+const touchMode = isCoarsePointer();
+if (touchMode) {
+    document.documentElement.classList.add('touch-mode');
+}
 
 // Game state
 const gameState = {
@@ -210,6 +216,14 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 document.getElementById('game-container').appendChild(renderer.domElement);
 
+if (touchMode) {
+    const canvas = renderer.domElement;
+    canvas.style.touchAction = 'none';
+    canvas.style.userSelect = 'none';
+    canvas.style.webkitUserSelect = 'none';
+    canvas.style.webkitTouchCallout = 'none';
+}
+
 // Physics world
 const world = new CANNON.World({
     gravity: new CANNON.Vec3(0, -9.82, 0)
@@ -288,8 +302,8 @@ function togglePause() {
     if (gameState.paused) {
         // Unlock pointer when pausing
         document.exitPointerLock();
-    } else {
-        // Request pointer lock when resuming
+    } else if (!touchMode) {
+        // Request pointer lock when resuming. Touch play never pointer-locks.
         renderer.domElement.requestPointerLock();
     }
 }
@@ -321,7 +335,9 @@ document.addEventListener('keydown', (event) => {
 document.getElementById('resume-button').addEventListener('click', () => {
     togglePause();
     // Request pointer lock when clicking resume
-    renderer.domElement.requestPointerLock();
+    if (!touchMode) {
+        renderer.domElement.requestPointerLock();
+    }
 });
 
 // Lighting
@@ -363,7 +379,7 @@ function init() {
     scene.add(camera);
     
     // Create game objects
-    player = new Player(camera, renderer, world);
+    player = new Player(camera, renderer, world, { touch: touchMode });
     field = new Field(scene, world);
     football = new Football(scene, world, camera, field);
     
@@ -380,6 +396,16 @@ function init() {
         }
     }
     
+    if (touchMode) {
+        mountTouchControls({
+            player,
+            getPaused: () => gameState.paused
+        });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', onWindowResize);
+        }
+    }
+
     // Event listeners
     window.addEventListener('resize', onWindowResize);
     // Note: Player class already sets up its own event listeners
@@ -387,9 +413,15 @@ function init() {
 
 // Handle window resize
 function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    if (touchMode && window.visualViewport) {
+        width = window.visualViewport.width;
+        height = window.visualViewport.height;
+    }
+    camera.aspect = width / height;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(width, height);
     player.handleResize();
 }
 
