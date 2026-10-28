@@ -129,6 +129,21 @@ html.touch-mode #power-meter {
     display: none;
 }
 
+html.touch-mode #score-display {
+    top: calc(12px + env(safe-area-inset-top, 0px)) !important;
+    right: calc(12px + env(safe-area-inset-right, 0px)) !important;
+}
+
+html.touch-mode #catch-counter {
+    top: calc(56px + env(safe-area-inset-top, 0px)) !important;
+    right: calc(12px + env(safe-area-inset-right, 0px)) !important;
+}
+
+html.touch-mode #route-display {
+    top: calc(116px + env(safe-area-inset-top, 0px)) !important;
+    right: calc(12px + env(safe-area-inset-right, 0px)) !important;
+}
+
 html.touch-mode #instructions {
     top: calc(10px + env(safe-area-inset-top, 0px));
     max-width: min(340px, 46vw);
@@ -148,9 +163,9 @@ html.touch-mode #instructions p {
 }
 
 html.touch-mode #throw-power-indicator {
-    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(118px + env(safe-area-inset-bottom, 0px)) !important;
     pointer-events: none;
-    z-index: 230;
+    z-index: 210;
 }
 
 html.touch-mode #resume-button {
@@ -163,7 +178,7 @@ html.touch-mode #resume-button {
 #touch-ui {
     position: absolute;
     inset: 0;
-    z-index: 220;
+    z-index: 500;
     pointer-events: none;
     font-family: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -289,12 +304,12 @@ html.touch-mode #resume-button {
     display: none;
     position: absolute;
     inset: 0;
-    z-index: 10;
+    z-index: 20;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 16px;
-    background: rgba(27, 27, 27, 0.94);
+    background: #1B1B1B;
     color: #f4f4f4;
     pointer-events: auto;
     touch-action: none;
@@ -312,34 +327,21 @@ html.touch-mode #resume-button {
 }
 
 .touch-rotate-phone {
-    width: 42px;
-    height: 68px;
+    width: 72px;
+    height: 44px;
     border: 2px solid #DCF763;
     border-radius: 8px;
     position: relative;
 }
 
-.touch-rotate-phone::before {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 28px;
-    height: 28px;
-    margin: -14px 0 0 -14px;
-    border: 2px solid #DCF763;
-    border-left-color: transparent;
-    border-radius: 50%;
-    transform: rotate(-40deg);
-}
-
 .touch-rotate-phone::after {
     content: "";
     position: absolute;
-    width: 14px;
-    height: 2px;
+    width: 2px;
+    height: 12px;
     background: #DCF763;
-    left: 50%;
-    bottom: 8px;
-    transform: translateX(-50%);
+    right: 7px;
+    top: 50%;
+    transform: translateY(-50%);
+    border-radius: 1px;
 }
