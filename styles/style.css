@@ -1,8 +1,50 @@
+@import '@fontsource/geist-mono/latin-400.css';
+@import '@fontsource/space-grotesk/latin-500.css';
+@import '@fontsource/space-grotesk/latin-600.css';
+
+html,
+body {
+    background-color: #1B1B1B;
+}
+
 body {
     margin: 0;
     padding: 0;
     overflow: hidden;
     font-family: Arial, sans-serif;
+}
+
+#back-link {
+    position: absolute;
+    z-index: 1200;
+    left: calc(16px + env(safe-area-inset-left, 0px));
+    top: calc(16px + env(safe-area-inset-top, 0px));
+    height: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 2px;
+    color: #f4f4f4;
+    background: transparent;
+    border: 0;
+    font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    text-decoration: none;
+    text-shadow: 0 1px 2px rgba(27, 27, 27, 0.9);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#back-link:hover {
+    color: #DCF763;
+}
+
+#back-link:focus-visible {
+    outline: 2px solid #DCF763;
+    outline-offset: 3px;
 }
 
 #game-container {
@@ -54,17 +96,68 @@ body {
 
 #loading-screen {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: #000;
-    color: white;
+    inset: 0;
+    z-index: 1100;
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 24px;
-    z-index: 100;
+    background: #1B1B1B;
+    color: #f4f4f4;
+    pointer-events: auto;
+    touch-action: none;
+    opacity: 1;
+    transition: opacity 350ms ease;
+}
+
+#loading-screen.is-done {
+    opacity: 0;
+    pointer-events: none;
+}
+
+#loading-panel {
+    width: min(320px, calc(100vw - 48px));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+#loading-percent {
+    font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 400;
+    font-size: 64px;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    color: #f4f4f4;
+    font-variant-numeric: tabular-nums;
+}
+
+#loading-track {
+    width: 100%;
+    height: 2px;
+    margin-top: 22px;
+    background: rgba(244, 244, 244, 0.16);
+    overflow: hidden;
+}
+
+#loading-bar {
+    width: 0%;
+    height: 100%;
+    background: #DCF763;
+}
+
+#loading-status {
+    margin: 16px 0 0;
+    font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.4;
+    color: #f4f4f4;
+    text-align: center;
+}
+
+#game-container.is-loading #touch-ui {
+    visibility: hidden;
+    pointer-events: none;
 }
 
 #pause-menu {

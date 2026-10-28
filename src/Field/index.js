@@ -4,9 +4,10 @@ import Receiver from '../Receiver';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 class Field {
-    constructor(scene, world) {
+    constructor(scene, world, options = {}) {
         this.scene = scene;
         this.world = world;
+        this.loaderOptions = options;
         this.field = null;
         this.fieldBody = null;
         this.receiver = null;
@@ -32,7 +33,11 @@ class Field {
         this.createSimpleField();
         
         // Create receiver
-        this.receiver = new Receiver(this.scene, this.world);
+        this.receiver = new Receiver(this.scene, this.world, {
+            loader: this.loaderOptions.loader,
+            modelUrl: this.loaderOptions.receiverUrl,
+            onLoadProgress: this.loaderOptions.onReceiverProgress
+        });
     }
 
     // Toggle between stadium and simple field
@@ -71,7 +76,7 @@ class Field {
         
         loader.load(
             // Resource URL
-            '/src/Field/components/acrisure_stadium_pittsburgh_pa (1).glb',
+            `${import.meta.env.BASE_URL}models/${encodeURIComponent('acrisure_stadium_pittsburgh_pa (1).glb')}`,
             
             // Called when the resource is loaded
             (gltf) => {

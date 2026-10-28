@@ -5,15 +5,6 @@ export function isCoarsePointer() {
     return window.matchMedia('(pointer: coarse)').matches;
 }
 
-function loadTouchFont() {
-    const href = 'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&display=swap';
-    if (document.querySelector(`link[href="${href}"]`)) return;
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = href;
-    document.head.appendChild(link);
-}
-
 function preventGesture(event) {
     event.preventDefault();
 }
@@ -68,8 +59,6 @@ export function mountTouchControls({
     onStartRoute,
     onReset
 }) {
-    loadTouchFont();
-
     const root = document.createElement('div');
     root.id = 'touch-ui';
 

@@ -1,13 +1,15 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-
 class Player {
     constructor(camera, renderer, world, options = {}) {
         this.camera = camera;
         this.renderer = renderer;
         this.world = world; // Physics world
+        this.loader = options.loader || null;
+        this.modelUrl = options.modelUrl || '';
+        this.onLoadProgress = options.onLoadProgress || null;
+        this.inputEnabled = false;
         this.controls = null;
         this.touchMode = options.touch === true;
         this.touchMoveX = 0;
@@ -68,8 +70,10 @@ class Player {
         document.addEventListener('keyup', this.onKeyUp.bind(this));
         
         // Lock pointer on click. Touch play aims by dragging and never pointer-locks.
+        // Clicks are ignored until both player models have finished loading.
         if (!this.touchMode) {
             this.renderer.domElement.addEventListener('click', () => {
+                if (!this.inputEnabled) return;
                 this.controls.lock();
             });
         }
@@ -78,13 +82,19 @@ class Player {
         this.createPhysicsBody();
     }
     
+    setInputEnabled(enabled) {
+        this.inputEnabled = enabled === true;
+    }
+
     loadPlayerModel() {
-        const loader = new GLTFLoader();
-        
+        if (!this.loader || !this.modelUrl) {
+            console.error('Player model loader is not configured');
+            return;
+        }
+
         // Load the player GLB file
-        loader.load(
-            // Resource URL
-            '/src/Player/components/quarterback.glb',
+        this.loader.load(
+            this.modelUrl,
             
             // Called when the resource is loaded
             (gltf) => {
@@ -122,7 +132,7 @@ class Player {
             
             // Called while loading is progressing
             (xhr) => {
-                console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+                if (this.onLoadProgress) this.onLoadProgress(xhr);
             },
             
             // Called when loading has errors
@@ -133,6 +143,7 @@ class Player {
     }
   
     onKeyDown(event) {
+        if (!this.inputEnabled) return;
         switch (event.code) {
             case 'ArrowUp':
             case 'KeyW':
@@ -165,6 +176,7 @@ class Player {
     }
     
     onKeyUp(event) {
+        if (!this.inputEnabled) return;
         switch (event.code) {
             case 'ArrowUp':
             case 'KeyW':
@@ -296,7 +308,7 @@ class Player {
     }
 
     update(deltaTime) {
-        if (!this._controlActive()) {
+        if (!this.inputEnabled || !this._controlActive()) {
             return;
         }
         

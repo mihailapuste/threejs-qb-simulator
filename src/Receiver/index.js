@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-
 class Receiver {
-    constructor(scene, world) {
+    constructor(scene, world, options = {}) {
         this.scene = scene;
         this.world = world;
+        this.loader = options.loader || null;
+        this.modelUrl = options.modelUrl || '';
+        this.onLoadProgress = options.onLoadProgress || null;
         this.mesh = null;
         this.body = null;
         this.running = false;
@@ -57,12 +58,15 @@ class Receiver {
     }
     
     loadPlayerModel() {
-        const loader = new GLTFLoader();
-        
+        if (!this.loader || !this.modelUrl) {
+            console.error('Receiver model loader is not configured');
+            this.createSimplePlayer();
+            return;
+        }
+
         // Load the player GLB file
-        loader.load(
-            // Resource URL
-            '/src/Receiver/components/american_football_player.glb',
+        this.loader.load(
+            this.modelUrl,
             
             // Called when the resource is loaded
             (gltf) => {
@@ -97,7 +101,7 @@ class Receiver {
             
             // Called while loading is progressing
             (xhr) => {
-                console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+                if (this.onLoadProgress) this.onLoadProgress(xhr);
             },
             
             // Called when loading has errors
