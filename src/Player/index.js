@@ -10,6 +10,9 @@ class Player {
         this.world = world; // Physics world
         this.controls = null;
         this.touchMode = options.touch === true;
+        this.touchMoveX = 0;
+        this.touchMoveY = 0;
+        this.touchMoveActive = false;
         this.throwPower = 0;
         this.maxThrowPower = 100;
         this.throwChargeRate = 2;
@@ -213,6 +216,22 @@ class Player {
         camera.updateMatrix();
     }
 
+    setTouchMove(x, y) {
+        this.touchMoveActive = true;
+        this.touchMoveX = x;
+        this.touchMoveY = y;
+    }
+
+    clearTouchMove() {
+        this.touchMoveActive = false;
+        this.touchMoveX = 0;
+        this.touchMoveY = 0;
+    }
+
+    requestNewBall() {
+        this.requestNewFootball = true;
+    }
+
     startThrow() {
         // Desktop still requires pointer lock. Touch mode is always active.
         if (this._controlActive()) {
@@ -289,16 +308,32 @@ class Player {
         // Handle movement
         this.velocity.x -= this.velocity.x * 10.0 * deltaTime;
         this.velocity.z -= this.velocity.z * 10.0 * deltaTime;
-        
-        this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
-        this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
-        this.direction.normalize();
-        
-        if (this.moveForward || this.moveBackward) {
-            this.velocity.z -= this.direction.z * this.moveSpeed * deltaTime;
-        }
-        if (this.moveLeft || this.moveRight) {
-            this.velocity.x -= this.direction.x * this.moveSpeed * deltaTime;
+
+        if (this.touchMode && this.touchMoveActive) {
+            let forward = THREE.MathUtils.clamp(this.touchMoveY, -1, 1);
+            let right = THREE.MathUtils.clamp(this.touchMoveX, -1, 1);
+            const length = Math.hypot(right, forward);
+            if (length > 1) {
+                forward /= length;
+                right /= length;
+            }
+            if (Math.abs(forward) > 0.001) {
+                this.velocity.z -= forward * this.moveSpeed * deltaTime;
+            }
+            if (Math.abs(right) > 0.001) {
+                this.velocity.x -= right * this.moveSpeed * deltaTime;
+            }
+        } else {
+            this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
+            this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
+            this.direction.normalize();
+
+            if (this.moveForward || this.moveBackward) {
+                this.velocity.z -= this.direction.z * this.moveSpeed * deltaTime;
+            }
+            if (this.moveLeft || this.moveRight) {
+                this.velocity.x -= this.direction.x * this.moveSpeed * deltaTime;
+            }
         }
         
         // Move the camera

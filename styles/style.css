@@ -131,7 +131,7 @@ html.touch-mode #power-meter {
 
 html.touch-mode #instructions {
     top: calc(10px + env(safe-area-inset-top, 0px));
-    max-width: min(420px, 72vw);
+    max-width: min(340px, 46vw);
     background: rgba(27, 27, 27, 0.72);
     color: #f4f4f4;
     border: 1px solid rgba(220, 247, 99, 0.55);
@@ -178,13 +178,90 @@ html.touch-mode #resume-button {
     touch-action: none;
 }
 
-#touch-throw {
+#touch-joystick {
+    position: absolute;
+    left: 16px;
+    left: calc(16px + env(safe-area-inset-left, 0px));
+    bottom: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    z-index: 3;
+    width: 120px;
+    height: 120px;
+    min-width: 56px;
+    min-height: 56px;
+    border-radius: 50%;
+    border: 2px solid rgba(220, 247, 99, 0.9);
+    background: rgba(27, 27, 27, 0.55);
+    pointer-events: auto;
+    touch-action: none;
+    box-sizing: border-box;
+}
+
+#touch-joystick.is-active {
+    background: rgba(27, 27, 27, 0.78);
+    border-color: #DCF763;
+}
+
+#touch-joystick-knob {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 52px;
+    height: 52px;
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 50%;
+    background: #DCF763;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+#touch-actions {
     position: absolute;
     right: 16px;
     right: calc(16px + env(safe-area-inset-right, 0px));
     bottom: 16px;
     bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    pointer-events: none;
+}
+
+#touch-utility {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+    max-width: min(420px, 48vw);
+    pointer-events: none;
+}
+
+.touch-btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: 12px;
+    border: 2px solid #DCF763;
+    background: rgba(27, 27, 27, 0.72);
+    color: #DCF763;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    pointer-events: auto;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.touch-btn.is-active {
+    background: #DCF763;
+    color: #1B1B1B;
+}
+
+#touch-throw {
     width: 76px;
     height: 76px;
     min-width: 44px;

@@ -294,6 +294,19 @@ window.openRouteMenu = openRouteMenu;
 window.closeRouteMenu = closeRouteMenu;
 window.selectRoute = selectRoute;
 
+function runStartRoute() {
+    const currentRoute = field.startReceiverRoute();
+    if (currentRoute) {
+        routeDisplay.innerHTML = `Route: ${currentRoute.charAt(0).toUpperCase() + currentRoute.slice(1)}`;
+    }
+    console.log("Receiver running route");
+}
+
+function runResetReceiver() {
+    field.resetReceiver();
+    console.log("Receiver reset");
+}
+
 // Pause/resume functionality
 function togglePause() {
     gameState.paused = !gameState.paused;
@@ -314,13 +327,10 @@ document.addEventListener('keydown', (event) => {
         togglePause();
     } else if (event.key === 'e' || event.key === 'E') {
         // Start receiver route on E key
-        const currentRoute = field.startReceiverRoute();
-        routeDisplay.innerHTML = `Route: ${currentRoute.charAt(0).toUpperCase() + currentRoute.slice(1)}`;
-        console.log("Receiver running route");
+        runStartRoute();
     } else if (event.key === 'r' || event.key === 'R') {
         // Reset receiver on R key
-        field.resetReceiver();
-        console.log("Receiver reset");
+        runResetReceiver();
     } else if (event.key === 't' || event.key === 'T') {
         // Open route selection menu on T key
         openRouteMenu();
@@ -399,7 +409,10 @@ function init() {
     if (touchMode) {
         mountTouchControls({
             player,
-            getPaused: () => gameState.paused
+            getPaused: () => gameState.paused,
+            onNewBall: () => player.requestNewBall(),
+            onStartRoute: () => runStartRoute(),
+            onReset: () => runResetReceiver()
         });
         if (window.visualViewport) {
             window.visualViewport.addEventListener('resize', onWindowResize);
