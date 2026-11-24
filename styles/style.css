@@ -73,6 +73,15 @@ body {
     text-align: right;
 }
 
+#situation {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    font-family: "Geist Mono", ui-monospace, monospace;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+}
+
 #route-display {
     font-size: 13px;
     font-weight: 600;
@@ -312,6 +321,109 @@ body {
     color: #1B1B1B;
 }
 
+#playbook,
+#designer {
+    position: absolute;
+    z-index: 1000;
+    pointer-events: auto;
+    font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+}
+
+#playbook {
+    top: calc(64px + env(safe-area-inset-top, 0px));
+    left: calc(12px + env(safe-area-inset-left, 0px));
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: min(280px, calc(100vw - 24px));
+    max-height: calc(100% - 96px);
+    overflow: auto;
+    padding: 14px;
+    border-radius: 14px;
+    background: rgba(27, 27, 27, 0.94);
+    color: #f4f4f4;
+}
+
+#playbook h3 { margin: 0 0 4px; }
+
+.play-row { display: flex; gap: 6px; }
+
+.play-row button,
+#designer-bar button,
+#designer-receivers button {
+    min-height: 44px;
+    border-radius: 10px;
+    border: 2px solid #DCF763;
+    background: transparent;
+    color: #DCF763;
+    font: inherit;
+    font-weight: 600;
+}
+
+.play-row button { flex: 1; text-align: left; padding: 0 10px; }
+.play-delete { flex: 0 0 52px !important; text-align: center !important; }
+.play-row button.is-selected,
+#designer-receivers button.is-selected,
+#playbook button:hover,
+#designer-bar button:hover {
+    background: #DCF763;
+    color: #1B1B1B;
+}
+
+#designer {
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: #14301f;
+    color: #f4f4f4;
+    padding: calc(52px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+#designer-status {
+    margin: 0 0 8px;
+    font-size: 14px;
+}
+
+#designer-canvas {
+    flex: 1;
+    width: 100%;
+    min-height: 180px;
+    border-radius: 12px;
+    touch-action: none;
+    cursor: crosshair;
+}
+
+#designer-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+#designer-receivers { display: flex; gap: 6px; }
+#designer-receivers button { width: 44px; padding: 0; }
+#designer-name {
+    min-height: 44px;
+    min-width: 120px;
+    flex: 1;
+    border-radius: 10px;
+    border: 2px solid #DCF763;
+    background: #1b1b1b;
+    color: #f4f4f4;
+    font: inherit;
+    padding: 0 10px;
+}
+
+#asset-credit {
+    margin: 8px 0 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: #c8c8c8;
+}
+
+#playbook[hidden],
+#designer[hidden],
 #route-menu[hidden],
 #pause-menu[hidden],
 #throw-power-indicator[hidden],
@@ -435,8 +547,11 @@ html.touch-mode #score-display {
 }
 
 html.touch-mode #hint {
-    top: calc(56px + env(safe-area-inset-top, 0px));
-    max-width: min(280px, 68vw);
+    top: auto;
+    bottom: calc(132px + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: min(260px, 70vw);
     font-size: 13px;
     z-index: 230;
 }
@@ -649,3 +764,25 @@ html.touch-mode #resume-button {
         transition: none;
     }
 }
+
+#plays-launch,
+#draw-launch {
+    position: absolute;
+    z-index: 40;
+    top: calc(16px + env(safe-area-inset-top, 0px));
+    height: 44px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 2px solid #DCF763;
+    background: rgba(27, 27, 27, 0.78);
+    color: #DCF763;
+    font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
+    pointer-events: auto;
+}
+
+#plays-launch { left: calc(84px + env(safe-area-inset-left, 0px)); }
+#draw-launch { left: calc(168px + env(safe-area-inset-left, 0px)); }
+
+html.touch-mode #plays-launch,
+html.touch-mode #draw-launch { display: none; }

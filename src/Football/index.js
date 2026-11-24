@@ -149,9 +149,25 @@ class Football {
         if (this.handMesh) return;
         const mesh = this.prototype.clone();
         mesh.rotation.set(-0.45, 0.35, 0.2);
+        mesh.visible = this.handVisible !== false;
         this.camera.add(mesh);
         this.handMesh = mesh;
         this.layoutHand();
+    }
+
+    setHandVisible(visible) {
+        this.handVisible = visible !== false;
+        if (this.handMesh) this.handMesh.visible = this.handVisible;
+    }
+
+    liveBall() {
+        for (let i = this.balls.length - 1; i >= 0; i -= 1) {
+            const ball = this.balls[i];
+            if (!ball.caught && !ball.bounced && !ball.frozen) {
+                return { x: ball.mesh.position.x, y: ball.mesh.position.y, z: ball.mesh.position.z };
+            }
+        }
+        return null;
     }
 
     layoutHand() {
@@ -189,8 +205,8 @@ class Football {
     aimHits() {
         this._raycaster.setFromCamera({ x: 0, y: 0 }, this.camera);
         const hits = [];
-        const aimMesh = this.field && this.field.receiver && this.field.receiver.aimMesh;
-        if (aimMesh) {
+        const aimMeshes = this.field && this.field.aimMeshes ? this.field.aimMeshes() : [];
+        aimMeshes.forEach((aimMesh) => {
             aimMesh.updateWorldMatrix(true, false);
             const found = this._raycaster.intersectObject(aimMesh, false);
             if (found.length > 0) {
@@ -203,7 +219,7 @@ class Football {
                     kind: 'receiver'
                 });
             }
-        }
+        });
         const direction = this._raycaster.ray.direction;
         if (direction.y < -0.001 && this._raycaster.ray.intersectPlane(this._ground, this._groundHit)) {
             const dx = this._groundHit.x - this.camera.position.x;
@@ -367,8 +383,7 @@ class Football {
         ball.frozen = true;
         ball.resolved = true;
         ball.mesh.position.set(spot.x, spot.y, spot.z);
-        const receiver = this.field && this.field.receiver;
-        if (receiver) receiver.mesh.attach(ball.mesh);
+        if (spot.group) spot.group.attach(ball.mesh);
         ball.removeAt = performance.now() + 1600;
         const scored = scoreThrow({
             caught: true,
@@ -376,6 +391,7 @@ class Football {
             airDistance,
             receiverX: spot.receiverX
         });
+        scored.receiverX = spot.receiverX;
         if (this.hooks.onResult) this.hooks.onResult(scored);
     }
 
@@ -394,22 +410,31 @@ class Football {
         const pos = positionAt(ball.origin, ball.velocity, flightTime);
         if (landed) pos.y = BALL_RADIUS;
 
-        const receiver = this.field && this.field.receiver;
-        if (receiver && !ball.caught) {
-            const attempt = sweptCatch({
-                from: ball.last,
-                to: pos,
-                receiver: { x: receiver.mesh.position.x, z: receiver.mesh.position.z }
-            });
-            if (attempt.caught) {
+        const targets = this.field && this.field.catchTargets ? this.field.catchTargets() : [];
+        if (!ball.caught && targets.length) {
+            let best = null;
+            for (let i = 0; i < targets.length; i += 1) {
+                const target = targets[i];
+                const attempt = sweptCatch({
+                    from: ball.last,
+                    to: pos,
+                    receiver: target,
+                    maxHeight: target.hopping ? 3.15 : undefined
+                });
+                if (attempt.caught && (!best || attempt.horizontal < best.attempt.horizontal)) {
+                    best = { target, attempt };
+                }
+            }
+            if (best) {
                 const airDistance = Math.hypot(pos.x - ball.origin.x, pos.z - ball.origin.z);
-                receiver.noteCatch();
+                if (this.field.noteCatch) this.field.noteCatch(best.target.index);
                 this.secureCatch(ball, {
                     x: pos.x,
                     y: Math.max(pos.y, 1.1),
                     z: pos.z,
-                    horizontal: attempt.horizontal,
-                    receiverX: receiver.mesh.position.x
+                    horizontal: best.attempt.horizontal,
+                    receiverX: best.target.x,
+                    group: best.target.group
                 }, airDistance);
                 return;
             }

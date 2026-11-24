@@ -37,6 +37,10 @@ class Player {
         this.playerModel = null;
         this.body = null;
         this.requestNewFootball = false;
+        this.attackEnabled = true;
+        this.allowLook = true;
+        this.suspended = false;
+        this.cruise = 5.4;
 
         this.init();
     }
@@ -50,10 +54,8 @@ class Player {
         }
         scene.add(this.bodyGroup);
 
-        // Pocket, six yards behind the fifty, eyes on the receiver at the right hash.
-        this.camera.position.set(-7, 1.7, 0);
         this.camera.rotation.order = 'YXZ';
-        this.camera.lookAt(0, 1.4, 10);
+        this.placePocket(-5, 0.35);
 
         this.loadPlayerModel();
         this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
@@ -67,11 +69,11 @@ class Player {
         const canvas = this.renderer.domElement;
         if (!this.touchMode) {
             canvas.addEventListener('click', () => {
-                if (!this.inputEnabled) return;
+                if (!this.inputEnabled || !this.allowLook) return;
                 this.controls.lock();
             });
             canvas.addEventListener('mousedown', (event) => {
-                if (!this.inputEnabled || event.button !== 0) return;
+                if (!this.inputEnabled || !this.attackEnabled || event.button !== 0) return;
                 if (!this.controls.isLocked) return;
                 event.preventDefault();
                 this.startThrow();
@@ -91,10 +93,7 @@ class Player {
     }
 
     loadPlayerModel() {
-        if (!this.loader || !this.modelUrl) {
-            console.error('Player model loader is not configured');
-            return;
-        }
+        if (!this.loader || !this.modelUrl) return;
 
         this.loader.load(
             this.modelUrl,
@@ -182,7 +181,7 @@ class Player {
     }
 
     lookBy(deltaX, deltaY) {
-        if (!this.touchMode || !this.camera || !this.controls) return;
+        if (!this.allowLook || !this.touchMode || !this.camera || !this.controls) return;
         const euler = this._lookEuler;
         euler.setFromQuaternion(this.camera.quaternion);
         const speed = 0.0062 * this.controls.pointerSpeed;
@@ -211,7 +210,7 @@ class Player {
     }
 
     startThrow() {
-        if (!this._controlActive() || this.throwing) return;
+        if (!this.attackEnabled || !this._controlActive() || this.throwing) return;
         this.throwing = true;
         this.chargeTime = 0;
         this.throwReleased = false;
@@ -254,6 +253,31 @@ class Player {
         return chargePower(this.chargeTime);
     }
 
+    getWish() {
+        if (this.touchMode && this.touchMoveActive) {
+            return { right: this.touchRight, forward: this.touchForward };
+        }
+        return {
+            right: Number(this.moveRight) - Number(this.moveLeft),
+            forward: Number(this.moveForward) - Number(this.moveBackward)
+        };
+    }
+
+    setRunControl({ attack = true, look = true, suspended = false, cruise = 5.4 } = {}) {
+        this.attackEnabled = attack;
+        this.allowLook = look;
+        this.suspended = suspended;
+        this.cruise = cruise;
+        if (!attack) this.cancelThrow();
+    }
+
+    placePocket(x, z) {
+        this.camera.position.set(x, 1.7, z);
+        this.camera.rotation.order = 'YXZ';
+        this.camera.lookAt(x + 22, 1.25, z + 4);
+        this.updateBodyPosition();
+    }
+
     getNewFootballRequest() {
         if (!this.requestNewFootball) return false;
         this.requestNewFootball = false;
@@ -261,7 +285,7 @@ class Player {
     }
 
     update(deltaTime) {
-        if (!this.inputEnabled || !this._controlActive()) return;
+        if (this.suspended || !this.inputEnabled || !this._controlActive()) return;
 
         if (this.throwing && !this.throwReleased) this.chargeTime += deltaTime;
 
@@ -278,7 +302,9 @@ class Player {
             velocity: this.velocity,
             wishRight,
             wishForward,
-            dt: deltaTime
+            dt: deltaTime,
+            maxSpeed: this.cruise,
+            accel: this.cruise * 8
         });
         this.controls.moveRight(this.velocity.right * deltaTime);
         this.controls.moveForward(this.velocity.forward * deltaTime);

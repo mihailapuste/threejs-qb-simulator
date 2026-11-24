@@ -75,3 +75,13 @@ export function scoreThrow({ caught, horizontal = 0, airDistance = 0, receiverX 
         breakdown: { base: 100, tight, depth, bonus }
     };
 }
+
+export function scoreRun({ gain = 0, touchdown = false } = {}) {
+    if (touchdown) {
+        return { points: 250 + Math.max(0, Math.round(gain)) * 4, label: 'TOUCHDOWN', touchdown: true };
+    }
+    const yards = Math.round(gain);
+    if (yards >= 1) return { points: yards * 8, label: `+${yards} YDS`, touchdown: false };
+    if (yards <= -1) return { points: 0, label: `${yards} YDS`, touchdown: false };
+    return { points: 0, label: 'NO GAIN', touchdown: false };
+}

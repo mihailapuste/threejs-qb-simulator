@@ -9,16 +9,19 @@
 <body>
     <div id="game-container" class="is-loading">
         <a id="back-link" href="/projects?p=qb-simulator">← Back</a>
+        <button id="plays-launch" type="button">Plays</button>
+        <button id="draw-launch" type="button">Draw</button>
         <div id="hud">
             <div id="feedback" role="status" aria-live="polite" hidden></div>
             <div id="stat-card">
-                <div id="route-display">Seam</div>
+                <div id="situation"><span id="down-display">1st & 10</span><span id="clock-display">2:00</span></div>
+                <div id="route-display">Slant</div>
                 <div id="score-line">
                     <span id="score-display">0</span>
                     <span id="catch-counter">0 catches</span>
                 </div>
             </div>
-            <p id="hint">Click to look. Hold left mouse or Space — the ball goes to the crosshair.</p>
+            <p id="hint">Pick a play or draw one, then hike. Hold to throw. Runs: move, then Down.</p>
             <div id="crosshair" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
             <div id="throw-power-indicator" hidden>
                 <div id="power-track"><div id="power-bar"></div></div>
@@ -32,8 +35,26 @@
             <ul id="pause-controls"></ul>
             <button id="mute-button" type="button" aria-pressed="false">Sound on</button>
             <button id="resume-button" type="button">Resume</button>
+            <p id="asset-credit">Players are drawn in code. The previous player models were “American Football Player” by blakeallen25, CC BY 4.0.</p>
         </div>
-        <div id="route-menu" hidden></div>
+        <div id="playbook" hidden></div>
+        <div id="designer" hidden>
+            <p id="designer-status"></p>
+            <canvas id="designer-canvas"></canvas>
+            <div id="designer-bar">
+                <div id="designer-receivers">
+                    <button type="button" data-receiver="0">1</button>
+                    <button type="button" data-receiver="1">2</button>
+                    <button type="button" data-receiver="2">3</button>
+                    <button type="button" data-receiver="3">4</button>
+                </div>
+                <input id="designer-name" type="text" maxlength="24" enterkeyhint="done" aria-label="Play name">
+                <button id="designer-undo" type="button">Undo</button>
+                <button id="designer-clear" type="button">Clear</button>
+                <button id="designer-save" type="button">Save</button>
+                <button id="designer-close" type="button">Done</button>
+            </div>
+        </div>
         <div id="loading-screen" role="status" aria-live="polite" aria-busy="true">
             <div id="loading-panel">
                 <div id="loading-percent">0%</div>

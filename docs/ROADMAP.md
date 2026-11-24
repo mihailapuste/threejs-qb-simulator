@@ -42,20 +42,15 @@ The after scene draws about 483k triangles. The frame is the receiver mesh. Turn
 
 JS bundle: 703 KB (185 KB gzip) before, about 710 KB (189 KB gzip) after. CSS 7.7 KB to about 11 KB. The models are unchanged at 3.5 MB + 6.9 MB and still dominate the load.
 
-## Milestone 2 — routes and a drive
+## Milestone 2 — line, plays, and a drive
 
-The receiver runs a real route and you throw him open.
+Shipped on this branch: code-built offense (four receivers, five linemen, a tight end, and a back), preset plays plus a hand-drawn play designer saved in `localStorage`, four downs, and stands drawn in code. The Sketchfab player meshes are no longer in the tree.
 
-- A route tree you can read: slant, out, curl, corner, post, seam, with the path drawn on the grass before the snap.
-- Hike is one action. He resets, runs, and you throw. No separate reset unless you want one.
-- He looks for the ball: a short adjust and a jump, then a drop if it is outside the hands. The window gets tighter now that the pass is honest.
-- A drive: four downs, the chains move, an incompletion stops the clock. Still local, still one receiver, still no account.
+## Milestone 3 — the field, up close
 
-## Milestone 3 — the field and the players
-
-- One field mesh, real goal posts, numbers that read from the pocket, a coded sky and a simple bowl of stands. No unlicensed stadium model.
-- Decimate both GLBs. Target under 2 MB each and under 80k triangles on screen, with a phone LOD. That is the actual path to 60fps.
-- Jerseys that separate the quarterback from the receiver at a glance.
+- Yard numbers that read from the pocket, and goal posts with a crossbar.
+- A little more life in the stands without another heavy mesh.
+- Jerseys you can tell apart at a glance, still in one draw.
 
 ## Milestone 4 — juice
 

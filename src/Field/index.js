@@ -1,7 +1,5 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import Receiver from '../Receiver';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 class Field {
     constructor(scene, world, options = {}) {
@@ -10,111 +8,57 @@ class Field {
         this.loaderOptions = options;
         this.field = null;
         this.fieldBody = null;
-        this.receiver = null;
-        this.stadiumModel = null;
-        this.simpleFieldElements = []; // Store simple field elements for toggling
-        this.showStadium = false; // Default to simple field for testing
+        this.simpleFieldElements = [];
+        this.bowl = null;
+        this.showStadium = true;
         this.init();
     }
 
     init() {
-        // Create field physics (always needed for collision)
         this.fieldBody = new CANNON.Body({
             type: CANNON.Body.STATIC,
             shape: new CANNON.Plane()
         });
         this.fieldBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
         this.world.addBody(this.fieldBody);
-        
-        // The stadium file is not in this repo. Load it only if the player asks for it.
-        this.stadiumRequested = false;
-
-        // Create the simple field for testing
         this.createSimpleField();
-        
-        // Create receiver
-        this.receiver = new Receiver(this.scene, this.world, {
-            loader: this.loaderOptions.loader,
-            modelUrl: this.loaderOptions.receiverUrl,
-            onLoadProgress: this.loaderOptions.onReceiverProgress,
-            flat: this.loaderOptions.flat === true,
-            shadows: this.loaderOptions.shadows !== false
-        });
+        this.createStadium();
     }
 
-    // Toggle between stadium and simple field
     toggleField() {
         this.showStadium = !this.showStadium;
-        
-        if (this.showStadium) {
-            // Hide simple field
-            this.simpleFieldElements.forEach(element => {
-                this.scene.remove(element);
-            });
-
-            if (!this.stadiumModel) this.loadStadiumModel();
-            else this.scene.add(this.stadiumModel);
-        } else {
-            // Hide stadium
-            if (this.stadiumModel) {
-                this.scene.remove(this.stadiumModel);
-            }
-            
-            // Show simple field
-            this.simpleFieldElements.forEach(element => {
-                this.scene.add(element);
-            });
-        }
-        
+        if (this.bowl) this.bowl.visible = this.showStadium;
         return this.showStadium;
     }
 
-    loadStadiumModel() {
-        if (this.stadiumRequested) return;
-        this.stadiumRequested = true;
-        const loader = new GLTFLoader();
-        
-        loader.load(
-            // Resource URL
-            `${import.meta.env.BASE_URL}models/${encodeURIComponent('acrisure_stadium_pittsburgh_pa (1).glb')}`,
-            
-            // Called when the resource is loaded
-            (gltf) => {
-                // Get the model from the loaded GLTF
-                this.stadiumModel = gltf.scene;
-                
-                // Scale the model appropriately - stadiums are typically large structures
-                this.stadiumModel.scale.set(1, 1, 1);
-                
-                // Position the model correctly - center it and adjust height
-                this.stadiumModel.position.set(0, 40.5, 0);
-                
-                // Adjust material properties
-                this.stadiumModel.traverse((child) => {
-                    if (child.isMesh) {
-                        child.castShadow = true;
-                        child.receiveShadow = true;
-                        
-                        // Make sure materials are available
-                        if (!child.material.emissive) {
-                            child.material = new THREE.MeshStandardMaterial({
-                                color: child.material.color || 0xFFFFFF,
-                                map: child.material.map || null
-                            });
-                        }
-                    }
-                });
-                
-                // Only add to scene if showStadium is true
-                if (this.showStadium) this.scene.add(this.stadiumModel);
-            },
-            undefined,
-            
-            // Called when loading has errors
-            (error) => {
-                console.error('An error happened loading the stadium model:', error);
-            }
-        );
+    createStadium() {
+        this.bowl = new THREE.Group();
+        const deck = new THREE.MeshStandardMaterial({ color: 0x2c3344, roughness: 0.9 });
+        const seat = new THREE.MeshStandardMaterial({ color: 0x3e4c63, roughness: 0.86 });
+        const add = (geometry, material, x, y, z) => {
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(x, y, z);
+            mesh.receiveShadow = true;
+            this.bowl.add(mesh);
+        };
+        const longDeck = new THREE.BoxGeometry(150, 6, 8);
+        const longSeat = new THREE.BoxGeometry(150, 5, 7);
+        add(longDeck, deck, 0, 3, 36);
+        add(longSeat, seat, 0, 8, 42);
+        add(longDeck, deck, 0, 3, -36);
+        add(longSeat, seat, 0, 8, -42);
+        const endDeck = new THREE.BoxGeometry(8, 7, 70);
+        add(endDeck, deck, 72, 3.5, 0);
+        add(endDeck, deck, -72, 3.5, 0);
+        const tower = new THREE.BoxGeometry(1.2, 22, 1.2);
+        const lamp = new THREE.MeshStandardMaterial({ color: 0xd7dde8, emissive: 0xfff1c9, emissiveIntensity: 0.35 });
+        [[-62, 28], [-62, -28], [62, 28], [62, -28]].forEach(([x, z]) => {
+            add(tower, deck, x, 11, z);
+            const head = new THREE.Mesh(new THREE.BoxGeometry(4, 0.6, 2.2), lamp);
+            head.position.set(x, 22, z);
+            this.bowl.add(head);
+        });
+        this.scene.add(this.bowl);
     }
     
     createSimpleField() {
@@ -319,52 +263,23 @@ class Field {
         this.simpleFieldElements.push(rightPost);
     }
 
-    checkCatch(footballBody) {
-        if (this.receiver && footballBody) {
-            return this.receiver.checkCatch(footballBody);
-        }
-        return false;
-    }
-    
-    update(deltaTime) {
-        if (this.receiver) {
-            this.receiver.update(deltaTime);
-        }
-    }
-    
-    startReceiverRoute(routeName = null) {
-        if (this.receiver) {
-            return this.receiver.startRoute(routeName);
-        }
-    }
-    
-    getReceiverRoutes() {
-        if (this.receiver) {
-            return this.receiver.getAvailableRoutes();
-        }
-        return [];
-    }
-    
-    getCurrentReceiverRoute() {
-        if (this.receiver) {
-            return this.receiver.getCurrentRoute();
-        }
-        return null;
-    }
-    
-    resetReceiver() {
-        if (this.receiver) {
-            this.receiver.reset();
-        }
+    bindOffense(offense) {
+        this.offense = offense;
     }
 
-    getReceiverCatchCount() {
-        if (this.receiver) {
-            return this.receiver.getCatchCount();
-        }
-        return 0;
+    aimMeshes() {
+        return this.offense ? this.offense.aimMeshes : [];
     }
 
+    catchTargets() {
+        return this.offense ? this.offense.catchTargets() : [];
+    }
+
+    noteCatch(index) {
+        if (this.offense) this.offense.noteCatch(index);
+    }
+
+    update() {}
 }
 
 export default Field;

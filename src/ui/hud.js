@@ -12,6 +12,8 @@ export function routeLabel(name) {
 export function createHud() {
     const feedback = document.getElementById('feedback');
     const routeDisplay = document.getElementById('route-display');
+    const downDisplay = document.getElementById('down-display');
+    const clockDisplay = document.getElementById('clock-display');
     const scoreDisplay = document.getElementById('score-display');
     const catchCounter = document.getElementById('catch-counter');
     const hint = document.getElementById('hint');
@@ -56,6 +58,54 @@ export function createHud() {
             scoreDisplay.textContent = String(score);
             catchCounter.textContent = catches === 1 ? '1 catch' : `${catches} catches`;
             if (route) routeDisplay.textContent = routeLabel(route);
+        },
+        setSituation({ down, clock, gain } = {}) {
+            if (downDisplay) downDisplay.textContent = gain == null ? down : `${down}  ${gain > 0 ? '+' : ''}${gain}`;
+            if (clockDisplay) clockDisplay.textContent = clock || '';
+        },
+        renderPlaybook(plays, currentId, onSelect, onDelete, onClose) {
+            const menu = document.getElementById('playbook');
+            menu.replaceChildren();
+            const title = document.createElement('h3');
+            title.textContent = 'Playbook';
+            menu.appendChild(title);
+            plays.forEach((play, index) => {
+                const row = document.createElement('div');
+                row.className = 'play-row';
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = play.id === currentId ? 'is-selected' : '';
+                button.textContent = `${index < 9 ? `${index + 1}  ` : ''}${play.name}${play.custom ? '' : ` · ${play.kind === 'pass' ? 'Pass' : 'Run'}`}`;
+                button.addEventListener('click', () => onSelect(play));
+                row.appendChild(button);
+                if (play.custom) {
+                    const remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.className = 'play-delete';
+                    remove.textContent = 'Del';
+                    remove.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        onDelete(play.id);
+                    });
+                    row.appendChild(remove);
+                }
+                menu.appendChild(row);
+            });
+            const close = document.createElement('button');
+            close.type = 'button';
+            close.className = 'route-close';
+            close.textContent = 'Close';
+            close.addEventListener('click', onClose);
+            menu.appendChild(close);
+            menu.hidden = false;
+        },
+        hidePlaybook() {
+            const menu = document.getElementById('playbook');
+            if (menu) menu.hidden = true;
+        },
+        playbookOpen() {
+            const menu = document.getElementById('playbook');
+            return menu ? !menu.hidden : false;
         },
         setHint(text) {
             hint.hidden = false;

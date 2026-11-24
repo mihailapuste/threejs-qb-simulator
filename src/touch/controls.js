@@ -57,8 +57,11 @@ export function mountTouchControls({
     getPaused = () => false,
     onNewBall,
     onHike,
-    onRoutes,
-    onReset
+    onPlays,
+    onDraw,
+    onReset,
+    onThrowStart,
+    onThrowEnd
 }) {
     const root = document.createElement('div');
     root.id = 'touch-ui';
@@ -82,10 +85,10 @@ export function mountTouchControls({
     const utility = document.createElement('div');
     utility.id = 'touch-utility';
     const hikeButton = makeUtilityButton('touch-hike', 'Hike');
-    const routesButton = makeUtilityButton('touch-routes', 'Routes');
-    const newBallButton = makeUtilityButton('touch-new-ball', 'Ball');
+    const playsButton = makeUtilityButton('touch-plays', 'Plays');
+    const drawButton = makeUtilityButton('touch-draw', 'Draw');
     const resetButton = makeUtilityButton('touch-reset', 'Reset');
-    utility.append(hikeButton, routesButton, newBallButton, resetButton);
+    utility.append(hikeButton, playsButton, drawButton, resetButton);
 
     const throwButton = document.createElement('button');
     throwButton.id = 'touch-throw';
@@ -101,7 +104,7 @@ export function mountTouchControls({
 
     const hint = document.getElementById('hint');
     if (hint) {
-        hint.textContent = 'Drag to aim. Hold Throw and drag to fine-tune, then release.';
+        hint.textContent = 'Plays or Draw, then Hike. Drag to aim. Hold Throw to pass.';
     }
 
     const canvas = player.renderer.domElement;
@@ -217,9 +220,9 @@ export function mountTouchControls({
     joystick.addEventListener('touchcancel', endStick, { passive: false });
     joystick.addEventListener('contextmenu', preventGesture);
 
-    if (onNewBall) bindTap(newBallButton, getPaused, onNewBall);
     if (onHike) bindTap(hikeButton, getPaused, onHike);
-    if (onRoutes) bindTap(routesButton, getPaused, onRoutes);
+    if (onPlays) bindTap(playsButton, getPaused, onPlays);
+    if (onDraw) bindTap(drawButton, getPaused, onDraw);
     if (onReset) bindTap(resetButton, getPaused, onReset);
 
     let throwId = null;
@@ -235,7 +238,10 @@ export function mountTouchControls({
         throwX = touch.clientX;
         throwY = touch.clientY;
         throwButton.classList.add('is-active');
-        if (!getPaused()) player.startThrow();
+        if (!getPaused()) {
+            if (onThrowStart) onThrowStart();
+            else player.startThrow();
+        }
     }, { passive: false });
 
     throwButton.addEventListener('touchmove', (event) => {
@@ -255,6 +261,7 @@ export function mountTouchControls({
         throwId = null;
         throwButton.classList.remove('is-active');
         if (getPaused()) player.cancelThrow();
+        else if (onThrowEnd) onThrowEnd();
         else player.endThrow();
     };
     throwButton.addEventListener('touchend', releaseThrow, { passive: false });
