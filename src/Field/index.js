@@ -26,9 +26,9 @@ class Field {
         this.fieldBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
         this.world.addBody(this.fieldBody);
         
-        // Load the stadium model but don't display it initially
-        this.loadStadiumModel();
-        
+        // The stadium file is not in this repo. Load it only if the player asks for it.
+        this.stadiumRequested = false;
+
         // Create the simple field for testing
         this.createSimpleField();
         
@@ -36,7 +36,9 @@ class Field {
         this.receiver = new Receiver(this.scene, this.world, {
             loader: this.loaderOptions.loader,
             modelUrl: this.loaderOptions.receiverUrl,
-            onLoadProgress: this.loaderOptions.onReceiverProgress
+            onLoadProgress: this.loaderOptions.onReceiverProgress,
+            flat: this.loaderOptions.flat === true,
+            shadows: this.loaderOptions.shadows !== false
         });
     }
 
@@ -49,11 +51,9 @@ class Field {
             this.simpleFieldElements.forEach(element => {
                 this.scene.remove(element);
             });
-            
-            // Show stadium if loaded
-            if (this.stadiumModel) {
-                this.scene.add(this.stadiumModel);
-            }
+
+            if (!this.stadiumModel) this.loadStadiumModel();
+            else this.scene.add(this.stadiumModel);
         } else {
             // Hide stadium
             if (this.stadiumModel) {
@@ -66,12 +66,12 @@ class Field {
             });
         }
         
-        console.log(`Field toggled. Stadium ${this.showStadium ? 'shown' : 'hidden'}`);
         return this.showStadium;
     }
 
     loadStadiumModel() {
-        // Use the GLTFLoader to load the stadium model
+        if (this.stadiumRequested) return;
+        this.stadiumRequested = true;
         const loader = new GLTFLoader();
         
         loader.load(
@@ -106,18 +106,9 @@ class Field {
                 });
                 
                 // Only add to scene if showStadium is true
-                if (this.showStadium) {
-                    this.scene.add(this.stadiumModel);
-                    console.log("Stadium model loaded and displayed");
-                } else {
-                    console.log("Stadium model loaded but hidden (toggle with 'F' key)");
-                }
+                if (this.showStadium) this.scene.add(this.stadiumModel);
             },
-            
-            // Called while loading is progressing
-            (xhr) => {
-                console.log((xhr.loaded / xhr.total * 100) + '% stadium loaded');
-            },
+            undefined,
             
             // Called when loading has errors
             (error) => {
@@ -127,8 +118,7 @@ class Field {
     }
     
     createSimpleField() {
-        console.log("Creating simple field for testing");
-        // Create field mesh - NCAA field dimensions (120 yards x 53.3 yards)
+        // Painted in yards. 120 x 53.3 includes both 10-yard end zones.
         const fieldGeometry = new THREE.PlaneGeometry(120, 53.3);
         const fieldMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x2E5A35,  // Darker field green
@@ -150,22 +140,27 @@ class Field {
     }
 
     addYardLines() {
-        // Add yard lines every 5 yards (4 inches wide, white)
+        const lineCount = 21;
+        const lines = new THREE.InstancedMesh(
+            new THREE.BoxGeometry(0.1, 0.01, 53.3),
+            new THREE.MeshStandardMaterial({
+                color: 0xFFFFFF,
+                emissive: 0xFFFFFF,
+                emissiveIntensity: 0.2
+            }),
+            lineCount
+        );
+        const dummy = new THREE.Object3D();
+        let index = 0;
         for (let i = 0; i <= 100; i += 5) {
-            // Only make 5-yard lines visible
-            if (i % 5 === 0) {
-                const lineGeometry = new THREE.BoxGeometry(0.1, 0.01, 53.3); // 4 inches wide (0.1 yards)
-                const lineMaterial = new THREE.MeshStandardMaterial({ 
-                    color: 0xFFFFFF,
-                    emissive: 0xFFFFFF,
-                    emissiveIntensity: 0.2
-                });
-                const line = new THREE.Mesh(lineGeometry, lineMaterial);
-                line.position.set(i - 50, 0.01, 0);
-                this.scene.add(line);
-                this.simpleFieldElements.push(line);
-            }
+            dummy.position.set(i - 50, 0.01, 0);
+            dummy.updateMatrix();
+            lines.setMatrixAt(index, dummy.matrix);
+            index += 1;
         }
+        lines.instanceMatrix.needsUpdate = true;
+        this.scene.add(lines);
+        this.simpleFieldElements.push(lines);
         
         // Add yard numbers in NFL style (G, 10, 20, 30, 40, 50, 40, 30, 20, 10, G)
         // But upside down on one side to match the reference image
@@ -221,24 +216,26 @@ class Field {
     }
     
     addHashMarks() {
-        // Add hash marks every yard - in reference image, there are many small hash marks
+        const hashes = new THREE.InstancedMesh(
+            new THREE.BoxGeometry(0.1, 0.01, 0.5),
+            new THREE.MeshStandardMaterial({ color: 0xFFFFFF }),
+            202
+        );
+        const dummy = new THREE.Object3D();
+        let index = 0;
         for (let i = 0; i <= 100; i += 1) {
-            // Create small hash marks on both sides of each yard line
-            const hashGeometry = new THREE.BoxGeometry(0.1, 0.01, 0.5); // Smaller hash marks
-            const hashMaterial = new THREE.MeshStandardMaterial({ color: 0xFFFFFF });
-            
-            // Top side hash marks (closer to top sideline)
-            const topHash = new THREE.Mesh(hashGeometry, hashMaterial);
-            topHash.position.set(i - 50, 0.01, -10); // Positioned to match reference
-            this.scene.add(topHash);
-            this.simpleFieldElements.push(topHash);
-            
-            // Bottom side hash marks (closer to bottom sideline)
-            const bottomHash = new THREE.Mesh(hashGeometry, hashMaterial);
-            bottomHash.position.set(i - 50, 0.01, 10); // Positioned to match reference
-            this.scene.add(bottomHash);
-            this.simpleFieldElements.push(bottomHash);
+            dummy.position.set(i - 50, 0.01, -10);
+            dummy.updateMatrix();
+            hashes.setMatrixAt(index, dummy.matrix);
+            index += 1;
+            dummy.position.set(i - 50, 0.01, 10);
+            dummy.updateMatrix();
+            hashes.setMatrixAt(index, dummy.matrix);
+            index += 1;
         }
+        hashes.instanceMatrix.needsUpdate = true;
+        this.scene.add(hashes);
+        this.simpleFieldElements.push(hashes);
     }
     
     addEndZones() {

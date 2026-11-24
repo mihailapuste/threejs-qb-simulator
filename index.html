@@ -9,16 +9,31 @@
 <body>
     <div id="game-container" class="is-loading">
         <a id="back-link" href="/projects?p=qb-simulator">← Back</a>
-        <div id="ui-overlay">
-            <div id="power-meter">
-                <div id="power-bar"></div>
+        <div id="hud">
+            <div id="feedback" role="status" aria-live="polite" hidden></div>
+            <div id="stat-card">
+                <div id="route-display">Seam</div>
+                <div id="score-line">
+                    <span id="score-display">0</span>
+                    <span id="catch-counter">0 catches</span>
+                </div>
             </div>
-            <div id="instructions">
-                <p>Click and hold to charge throw, release to throw</p>
-                <p>WASD to move, Mouse to look around</p>
-                <p>Press ESC to pause the game</p>
+            <p id="hint">Click to look. Hold left mouse or Space — the ball goes to the crosshair.</p>
+            <div id="crosshair" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
+            <div id="throw-power-indicator" hidden>
+                <div id="power-track"><div id="power-bar"></div></div>
+                <div id="power-readout">0%</div>
             </div>
+            <div id="perf-readout" hidden></div>
         </div>
+        <div id="pause-menu" hidden>
+            <h2>Paused</h2>
+            <p id="pause-note">Press Esc to resume</p>
+            <ul id="pause-controls"></ul>
+            <button id="mute-button" type="button" aria-pressed="false">Sound on</button>
+            <button id="resume-button" type="button">Resume</button>
+        </div>
+        <div id="route-menu" hidden></div>
         <div id="loading-screen" role="status" aria-live="polite" aria-busy="true">
             <div id="loading-panel">
                 <div id="loading-percent">0%</div>

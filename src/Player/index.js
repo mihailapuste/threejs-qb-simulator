@@ -1,87 +1,91 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
+import { chargePower } from '../game/throwMath.js';
+import { stepVelocity } from '../game/movement.js';
+import { prepareCharacter } from '../render/materials.js';
+
 class Player {
     constructor(camera, renderer, world, options = {}) {
         this.camera = camera;
         this.renderer = renderer;
-        this.world = world; // Physics world
+        this.world = world;
         this.loader = options.loader || null;
         this.modelUrl = options.modelUrl || '';
         this.onLoadProgress = options.onLoadProgress || null;
+        this.flatMaterials = options.flat === true;
         this.inputEnabled = false;
         this.controls = null;
         this.touchMode = options.touch === true;
-        this.touchMoveX = 0;
-        this.touchMoveY = 0;
+        this.touchRight = 0;
+        this.touchForward = 0;
         this.touchMoveActive = false;
-        this.throwPower = 0;
-        this.maxThrowPower = 100;
-        this.throwChargeRate = 2;
+        this.chargeTime = 0;
         this.throwing = false;
         this.throwReleased = false;
+        this.fullChargePlayed = false;
         this._lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-        
-        // Movement variables
+        this._bodyQuat = new CANNON.Quaternion();
+
         this.moveForward = false;
         this.moveBackward = false;
         this.moveLeft = false;
         this.moveRight = false;
-        this.velocity = new THREE.Vector3();
-        this.direction = new THREE.Vector3();
-        this.moveSpeed = 1.5; // Reduced from 5.0 to make movement slower
-        
-        // Player model
+        this.velocity = { right: 0, forward: 0 };
+
         this.bodyGroup = null;
         this.playerModel = null;
-        this.body = null; // Physics body
-        
-        // New football request flag
+        this.body = null;
         this.requestNewFootball = false;
-        
+
         this.init();
     }
 
     init() {
-        // Create a group for the player body
         this.bodyGroup = new THREE.Group();
-        
-        // Get the scene from the camera
         const scene = this.camera.parent;
         if (!scene) {
-            console.error("Camera is not added to a scene yet");
+            console.error('Camera is not added to a scene yet');
             return;
         }
-        
-        // Add the body group to the scene
         scene.add(this.bodyGroup);
-        
-        // Set up camera for first person view - positioned at face level and forward
-        this.camera.position.set(0, 1.9, 0); // Eye level, moved forward
-        
-        // Load the player model
+
+        // Pocket, six yards behind the fifty, eyes on the receiver at the right hash.
+        this.camera.position.set(-7, 1.7, 0);
+        this.camera.rotation.order = 'YXZ';
+        this.camera.lookAt(0, 1.4, 10);
+
         this.loadPlayerModel();
-        
-        // Set up controls - using PointerLockControls
         this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
-        
-        // Add event listeners for keyboard controls
+        this.controls.minPolarAngle = 0.28;
+        this.controls.maxPolarAngle = Math.PI - 0.22;
+        if (this.touchMode) this.controls.pointerSpeed = 1.15;
+
         document.addEventListener('keydown', this.onKeyDown.bind(this));
         document.addEventListener('keyup', this.onKeyUp.bind(this));
-        
-        // Lock pointer on click. Touch play aims by dragging and never pointer-locks.
-        // Clicks are ignored until both player models have finished loading.
+
+        const canvas = this.renderer.domElement;
         if (!this.touchMode) {
-            this.renderer.domElement.addEventListener('click', () => {
+            canvas.addEventListener('click', () => {
                 if (!this.inputEnabled) return;
                 this.controls.lock();
             });
+            canvas.addEventListener('mousedown', (event) => {
+                if (!this.inputEnabled || event.button !== 0) return;
+                if (!this.controls.isLocked) return;
+                event.preventDefault();
+                this.startThrow();
+            });
         }
-        
-        // Create physics body
+        window.addEventListener('mouseup', (event) => {
+            if (event.button !== 0) return;
+            if (this.throwing && !this.touchMode) this.endThrow();
+        });
+        canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+
         this.createPhysicsBody();
     }
-    
+
     setInputEnabled(enabled) {
         this.inputEnabled = enabled === true;
     }
@@ -92,58 +96,32 @@ class Player {
             return;
         }
 
-        // Load the player GLB file
         this.loader.load(
             this.modelUrl,
-            
-            // Called when the resource is loaded
             (gltf) => {
-                // Get the model from the loaded GLTF
                 this.playerModel = gltf.scene;
-                
-                // Scale the model to match the receiver (1.7)
                 this.playerModel.scale.set(1.7, 1.7, 1.7);
-                
-                // Adjust material properties if needed
-                this.playerModel.traverse((child) => {
-                    if (child.isMesh) {
-                        child.castShadow = true;
-                        child.receiveShadow = true;
-                        
-                        // Make sure materials are available for highlighting
-                        if (!child.material.emissive) {
-                            child.material = new THREE.MeshStandardMaterial({
-                                color: child.material.color || 0x0000FF,
-                                map: child.material.map || null
-                            });
-                        }
-                    }
-                });
-                
-                // Add the model to our body group
+                // The body sits behind the camera. Skip its shadow; it is most of the vertex cost.
+                prepareCharacter(this.playerModel, { shadows: false, flat: this.flatMaterials });
+                // First person: the body sits inside the camera and only costs vertices.
+                this.playerModel.visible = false;
                 this.bodyGroup.add(this.playerModel);
-                
-                // Position the model correctly
-                this.playerModel.position.y = 0; // Adjust as needed to make feet touch ground
-                
-                // Update the body group position to match camera
+                this.playerModel.position.y = 0;
                 this.updateBodyPosition();
             },
-            
-            // Called while loading is progressing
             (xhr) => {
                 if (this.onLoadProgress) this.onLoadProgress(xhr);
             },
-            
-            // Called when loading has errors
             (error) => {
                 console.error('An error happened loading the player model:', error);
             }
         );
     }
-  
+
     onKeyDown(event) {
         if (!this.inputEnabled) return;
+        if (event.code === 'Space') event.preventDefault();
+        if (event.repeat && event.code === 'Space') return;
         switch (event.code) {
             case 'ArrowUp':
             case 'KeyW':
@@ -162,19 +140,16 @@ class Player {
                 this.moveRight = true;
                 break;
             case 'Space':
-                // Start throw on spacebar press
-                if (!this.throwing && this._controlActive()) {
-                    this.startThrow();
-                }
+                if (!this.throwing && this._controlActive()) this.startThrow();
                 break;
             case 'KeyQ':
-                // Request a new football
                 this.requestNewFootball = true;
-                console.log("Q key pressed - requesting new football");
+                break;
+            default:
                 break;
         }
     }
-    
+
     onKeyUp(event) {
         if (!this.inputEnabled) return;
         switch (event.code) {
@@ -195,10 +170,9 @@ class Player {
                 this.moveRight = false;
                 break;
             case 'Space':
-                // End throw on spacebar release
-                if (this.throwing) {
-                    this.endThrow();
-                }
+                if (this.throwing) this.endThrow();
+                break;
+            default:
                 break;
         }
     }
@@ -209,35 +183,27 @@ class Player {
 
     lookBy(deltaX, deltaY) {
         if (!this.touchMode || !this.camera || !this.controls) return;
-
-        const camera = this.camera;
         const euler = this._lookEuler;
-        euler.setFromQuaternion(camera.quaternion);
-
-        // Higher than PointerLockControls' 0.002 because a finger drag is
-        // shorter than an unlocked mouse flick. Desktop look is unchanged.
-        const speed = 0.005 * this.controls.pointerSpeed;
+        euler.setFromQuaternion(this.camera.quaternion);
+        const speed = 0.0062 * this.controls.pointerSpeed;
         euler.y -= deltaX * speed;
         euler.x -= deltaY * speed;
-
         const minPitch = Math.PI / 2 - this.controls.maxPolarAngle;
         const maxPitch = Math.PI / 2 - this.controls.minPolarAngle;
         euler.x = Math.max(minPitch, Math.min(maxPitch, euler.x));
-
-        camera.quaternion.setFromEuler(euler);
-        camera.updateMatrix();
+        this.camera.quaternion.setFromEuler(euler);
     }
 
-    setTouchMove(x, y) {
+    setTouchMove(right, forward) {
         this.touchMoveActive = true;
-        this.touchMoveX = x;
-        this.touchMoveY = y;
+        this.touchRight = right;
+        this.touchForward = forward;
     }
 
     clearTouchMove() {
         this.touchMoveActive = false;
-        this.touchMoveX = 0;
-        this.touchMoveY = 0;
+        this.touchRight = 0;
+        this.touchForward = 0;
     }
 
     requestNewBall() {
@@ -245,176 +211,115 @@ class Player {
     }
 
     startThrow() {
-        // Desktop still requires pointer lock. Touch mode is always active.
-        if (this._controlActive()) {
-            this.throwing = true;
-            this.throwPower = 0;
-            this.throwReleased = false;
-        }
-    }
-
-    updateThrowPower() {
-        if (this.throwing && !this.throwReleased && this.throwPower < this.maxThrowPower) {
-            this.throwPower += this.throwChargeRate;
-        }
+        if (!this._controlActive() || this.throwing) return;
+        this.throwing = true;
+        this.chargeTime = 0;
+        this.throwReleased = false;
+        this.fullChargePlayed = false;
     }
 
     endThrow() {
-        if (this.throwing) {
-            this.throwReleased = true;
-        }
+        if (this.throwing) this.throwReleased = true;
+    }
+
+    cancelThrow() {
+        this.throwing = false;
+        this.throwReleased = false;
+        this.chargeTime = 0;
+        this.fullChargePlayed = false;
+    }
+
+    consumeFullChargeTick() {
+        if (!this.throwing || this.fullChargePlayed) return false;
+        if (chargePower(this.chargeTime) < 0.98) return false;
+        this.fullChargePlayed = true;
+        return true;
     }
 
     getThrowData() {
-        if (this.throwReleased) {
-            this.throwing = false;
-            this.throwReleased = false;
-            
-            // Get camera direction for throw
-            const direction = new THREE.Vector3();
-            this.camera.getWorldDirection(direction);
-            
-            // Add slight upward angle
-            direction.y += 0.2;
-            direction.normalize();
-            
-            // Store the power before resetting
-            const power = this.throwPower;
-            
-            // Reset power
-            this.throwPower = 0;
-            
-            return { direction, power };
-        }
-        return null;
+        if (!this.throwReleased) return null;
+        this.throwing = false;
+        this.throwReleased = false;
+        const power = chargePower(this.chargeTime);
+        this.chargeTime = 0;
+        this.fullChargePlayed = false;
+        return { power };
     }
-    
-    // New methods to expose throw state
+
     isChargingThrow() {
         return this.throwing && !this.throwReleased;
     }
-    
+
     getThrowPower() {
-        return this.throwPower / this.maxThrowPower; // Return normalized value between 0 and 1
+        return chargePower(this.chargeTime);
     }
 
     getNewFootballRequest() {
-        if (this.requestNewFootball) {
-            console.log("Football request detected and being processed");
-            this.requestNewFootball = false;
-            return true;
-        }
-        return false;
+        if (!this.requestNewFootball) return false;
+        this.requestNewFootball = false;
+        return true;
     }
 
     update(deltaTime) {
-        if (!this.inputEnabled || !this._controlActive()) {
-            return;
-        }
-        
-        // Handle throw charging
-        if (this.throwing && !this.throwReleased) {
-            this.throwPower = Math.min(this.throwPower + this.throwChargeRate, this.maxThrowPower);
-        }
-        
-        // Handle movement
-        this.velocity.x -= this.velocity.x * 10.0 * deltaTime;
-        this.velocity.z -= this.velocity.z * 10.0 * deltaTime;
+        if (!this.inputEnabled || !this._controlActive()) return;
 
+        if (this.throwing && !this.throwReleased) this.chargeTime += deltaTime;
+
+        let wishRight = 0;
+        let wishForward = 0;
         if (this.touchMode && this.touchMoveActive) {
-            let forward = THREE.MathUtils.clamp(this.touchMoveY, -1, 1);
-            let right = THREE.MathUtils.clamp(this.touchMoveX, -1, 1);
-            const length = Math.hypot(right, forward);
-            if (length > 1) {
-                forward /= length;
-                right /= length;
-            }
-            if (Math.abs(forward) > 0.001) {
-                this.velocity.z -= forward * this.moveSpeed * deltaTime;
-            }
-            if (Math.abs(right) > 0.001) {
-                this.velocity.x -= right * this.moveSpeed * deltaTime;
-            }
-        } else {
-            this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
-            this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
-            this.direction.normalize();
-
-            if (this.moveForward || this.moveBackward) {
-                this.velocity.z -= this.direction.z * this.moveSpeed * deltaTime;
-            }
-            if (this.moveLeft || this.moveRight) {
-                this.velocity.x -= this.direction.x * this.moveSpeed * deltaTime;
-            }
+            wishRight = this.touchRight;
+            wishForward = this.touchForward;
+        } else if (!this.touchMode) {
+            wishRight = Number(this.moveRight) - Number(this.moveLeft);
+            wishForward = Number(this.moveForward) - Number(this.moveBackward);
         }
-        
-        // Move the camera
-        this.controls.moveRight(-this.velocity.x);
-        this.controls.moveForward(-this.velocity.z);
-        
-        // Update the body position to follow the camera
+        this.velocity = stepVelocity({
+            velocity: this.velocity,
+            wishRight,
+            wishForward,
+            dt: deltaTime
+        });
+        this.controls.moveRight(this.velocity.right * deltaTime);
+        this.controls.moveForward(this.velocity.forward * deltaTime);
+
         this.updateBodyPosition();
-        
-        // Update physics body position to match visual body
         if (this.body) {
             this.body.position.x = this.bodyGroup.position.x;
-            this.body.position.y = this.bodyGroup.position.y + 0.9; // Center of mass is higher
+            this.body.position.y = this.bodyGroup.position.y + 0.9;
             this.body.position.z = this.bodyGroup.position.z;
-            
-            // Convert THREE.js rotation to CANNON quaternion
-            const quaternion = new CANNON.Quaternion();
-            quaternion.setFromEuler(0, this.bodyGroup.rotation.y, 0);
-            this.body.quaternion.copy(quaternion);
+            this._bodyQuat.setFromEuler(0, this.bodyGroup.rotation.y, 0);
+            this.body.quaternion.copy(this._bodyQuat);
         }
     }
-    
+
     updateBodyPosition() {
-        if (this.bodyGroup && this.camera) {
-            // Get the camera's position
-            const cameraPosition = new THREE.Vector3();
-            this.camera.getWorldPosition(cameraPosition);
-            
-            // Calculate position behind the camera (where the body should be)
-            const cameraDirection = new THREE.Vector3(0, 0, -1);
-            cameraDirection.applyQuaternion(this.camera.quaternion);
-            
-            // Move the body position behind the camera by 0.5 units
-            const bodyPosition = cameraPosition.clone();
-            bodyPosition.sub(cameraDirection.multiplyScalar(1));
-            
-            // Update the body group position (keeping the y position unchanged)
-            this.bodyGroup.position.x = bodyPosition.x;
-            this.bodyGroup.position.z = bodyPosition.z;
-            
-            // Rotate the body to match the camera's direction
-            const faceDirection = new THREE.Vector3(0, 0, -1);
-            faceDirection.applyQuaternion(this.camera.quaternion);
-            faceDirection.y = 0; // Keep rotation only in the xz plane
-            faceDirection.normalize();
-            
-            // Set the body rotation to face the same direction as the camera
-            if (faceDirection.length() > 0) {
-                this.bodyGroup.rotation.y = Math.atan2(faceDirection.x, faceDirection.z);
-            }
-        }
+        if (!this.bodyGroup || !this.camera) return;
+        const cameraPosition = this.camera.position;
+        const forwardX = -Math.sin(this._yaw());
+        const forwardZ = -Math.cos(this._yaw());
+        this.bodyGroup.position.x = cameraPosition.x - forwardX * 0.85;
+        this.bodyGroup.position.z = cameraPosition.z - forwardZ * 0.85;
+        this.bodyGroup.rotation.y = Math.atan2(forwardX, forwardZ);
+    }
+
+    _yaw() {
+        this._lookEuler.setFromQuaternion(this.camera.quaternion);
+        return this._lookEuler.y;
     }
 
     createPhysicsBody() {
-        // Create a physics body for the player
-        const shape = new CANNON.Cylinder(0.3, 0.3, 1.8, 32); // Match the receiver's shape
+        const shape = new CANNON.Cylinder(0.3, 0.3, 1.8, 8);
         this.body = new CANNON.Body({
-            mass: 80, // Player has mass (80kg is typical football player)
-            position: new CANNON.Vec3(0, 0.9, 0), // Initial position with height
-            shape: shape
+            mass: 80,
+            position: new CANNON.Vec3(-7, 0.9, 0),
+            shape
         });
-        
-        // Add the physics body to the world
+        this.body.linearDamping = 0.9;
         this.world.addBody(this.body);
     }
 
-    handleResize() {
-        // No need to handle resize with PointerLockControls
-    }
+    handleResize() {}
 }
 
 export default Player;

@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
+import { prepareCharacter } from '../render/materials.js';
+
 class Receiver {
     constructor(scene, world, options = {}) {
         this.scene = scene;
@@ -7,6 +9,8 @@ class Receiver {
         this.loader = options.loader || null;
         this.modelUrl = options.modelUrl || '';
         this.onLoadProgress = options.onLoadProgress || null;
+        this.flatMaterials = options.flat === true;
+        this.castShadows = options.shadows !== false;
         this.mesh = null;
         this.body = null;
         this.running = false;
@@ -44,6 +48,23 @@ class Receiver {
         // Near the hash mark (10 yards from center)
         this.mesh.position.set(0, 0, 10); // 0 is midfield
         this.scene.add(this.mesh);
+
+        // Cheap stand-in for the crosshair. Raycasting the full player mesh is too heavy.
+        this.aimMesh = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.7, 0.7, 2.05, 10),
+            new THREE.MeshBasicMaterial({ visible: false })
+        );
+        this.aimMesh.position.y = 1.05;
+        this.aimMesh.visible = false;
+        this.mesh.add(this.aimMesh);
+
+        const blob = new THREE.Mesh(
+            new THREE.CircleGeometry(0.62, 20),
+            new THREE.MeshBasicMaterial({ color: 0x061208, transparent: true, opacity: 0.4, depthWrite: false })
+        );
+        blob.rotation.x = -Math.PI / 2;
+        blob.position.y = 0.025;
+        this.mesh.add(blob);
         
         // Load the player GLB model
         this.loadPlayerModel();
@@ -75,21 +96,9 @@ class Receiver {
                 
                 // Scale the model to be 2x bigger (1.0 instead of 0.5)
                 this.playerModel.scale.set(1.7, 1.7, 1.7);
-                
-                // Adjust material properties if needed
-                this.playerModel.traverse((child) => {
-                    if (child.isMesh) {
-                        child.castShadow = true;
-                        child.receiveShadow = true;
-                        
-                        // Make sure materials are available for highlighting
-                        if (!child.material.emissive) {
-                            child.material = new THREE.MeshStandardMaterial({
-                                color: child.material.color || 0x0000FF,
-                                map: child.material.map || null
-                            });
-                        }
-                    }
+                prepareCharacter(this.playerModel, {
+                    shadows: this.castShadows,
+                    flat: this.flatMaterials
                 });
                 
                 // Add the model to our mesh group
@@ -219,40 +228,36 @@ class Receiver {
         }
     }
     
+    _flash(hex, intensity, milliseconds) {
+        const apply = (material) => {
+            if (!material || !material.emissive) return;
+            material.emissive.set(hex);
+            material.emissiveIntensity = intensity;
+            window.setTimeout(() => {
+                material.emissive.set(0x000000);
+                material.emissiveIntensity = 0;
+            }, milliseconds);
+        };
+        if (this.playerModel) {
+            this.playerModel.traverse((child) => {
+                if (child.isMesh) apply(child.material);
+            });
+        } else if (this.mesh.children[0] && this.mesh.children[0].material) {
+            apply(this.mesh.children[0].material);
+        }
+    }
+
+    noteCatch() {
+        this.catchCount += 1;
+        this._flash(0x66FF88, 0.65, 700);
+    }
+
     checkCatch(footballBody) {
-        console.log("Checking for catch...");
-        if (footballBody && this.body) {
-            const distance = footballBody.position.distanceTo(this.body.position);
-            console.log(`Distance to football: ${distance}`);
-            if (distance < 0.5) { // 0.5 meters catch radius
-                // Highlight the receiver to indicate a catch
-                if (this.playerModel) {
-                    this.playerModel.traverse((child) => {
-                        if (child.isMesh && child.material && child.material.emissive) {
-                            child.material.emissive.set(0x00FF00);
-                            child.material.emissiveIntensity = 0.5;
-                            
-                            // Reset emissive after 1 second
-                            setTimeout(() => {
-                                child.material.emissive.set(0x000000);
-                                child.material.emissiveIntensity = 0;
-                            }, 1000);
-                        }
-                    });
-                } else if (this.mesh.children[0] && this.mesh.children[0].material) {
-                    this.mesh.children[0].material.emissive = new THREE.Color(0x00FF00);
-                    this.mesh.children[0].material.emissiveIntensity = 0.5;
-                    
-                    // Reset emissive after 1 second
-                    setTimeout(() => {
-                        this.mesh.children[0].material.emissive = new THREE.Color(0x000000);
-                        this.mesh.children[0].material.emissiveIntensity = 0;
-                    }, 1000);
-                }
-                this.catchCount++;
-                console.log(`Catch made! Total catches: ${this.catchCount}`);
-                return true;
-            }
+        if (!footballBody || !this.body) return false;
+        const distance = footballBody.position.distanceTo(this.body.position);
+        if (distance < 1.2) {
+            this.noteCatch();
+            return true;
         }
         return false;
     }
