@@ -4,85 +4,288 @@ import Player from './Player/index.js';
 import Field from './Field/index.js';
 import Football from './Football/index.js';
 import { isCoarsePointer, mountTouchControls } from './touch/controls.js';
-import { createPlayerModelLoader, modelUrls } from './loading/assets.js';
+import { createSfx } from './audio/sfx.js';
+import { createHud } from './ui/hud.js';
+import { Offense, qbSpot } from './offense/unit.js';
+import { mountDesigner } from './play/designer.js';
+import {
+    PRESET_PLAYS,
+    QB_OFFSET,
+    isRun,
+    loadCustomPlays,
+    normalizePlay,
+    saveCustomPlays
+} from './game/plays.js';
+import { formatClock, formatDown, formatPlayClock, formatYardLine, freshDrive, resolveDrive, snapDrive, tickClock, tickPlayClock } from './game/drive.js';
+import { scoreRun } from './game/scoring.js';
 
 const touchMode = isCoarsePointer();
-if (touchMode) {
-    document.documentElement.classList.add('touch-mode');
-}
+if (touchMode) document.documentElement.classList.add('touch-mode');
 
-// Game state
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const perfOn = new URLSearchParams(window.location.search).has('perf');
+const sfx = createSfx();
+const hud = createHud();
+
 const gameState = {
-    receiverCaught: false,
     paused: false,
+    designing: false,
     score: 0,
-    catches: 0,
-    ready: false
+    ready: false,
+    timeShown: false
 };
 
-// DOM elements
 const loadingScreen = document.getElementById('loading-screen');
-const loadingPercent = document.getElementById('loading-percent');
-const loadingBar = document.getElementById('loading-bar');
-const loadingStatus = document.getElementById('loading-status');
 const gameContainer = document.getElementById('game-container');
-
-const {
-    manager: loadingManager,
-    loader: modelLoader,
-    record: recordModelBytes,
-    noteItems,
-    getProgress
-} = createPlayerModelLoader();
 let touchControlsMounted = false;
-let loadFailed = false;
+let hinted = false;
+let customs = loadCustomPlays();
+let selected = PRESET_PLAYS[0];
+let drive = freshDrive();
+let playClockWhistled = false;
+let sun = null;
 
-function formatMegabytes(bytes) {
-    return Math.round((Number(bytes) || 0) / 1_000_000);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87CEEB);
+scene.fog = new THREE.Fog(0x87CEEB, 90, 230);
+const camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.1, 400);
+const renderer = new THREE.WebGLRenderer({
+    antialias: false,
+    powerPreference: 'high-performance',
+    precision: touchMode ? 'mediump' : 'highp'
+});
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+gameContainer.appendChild(renderer.domElement);
+
+if (touchMode) {
+    const canvas = renderer.domElement;
+    canvas.style.touchAction = 'none';
+    canvas.style.userSelect = 'none';
 }
 
-function renderLoadProgress() {
-    const { loaded, total, percent } = getProgress();
-    if (loadingPercent) loadingPercent.textContent = `${percent}%`;
-    if (loadingBar) loadingBar.style.width = `${percent}%`;
-    if (loadingStatus) {
-        loadingStatus.textContent = `Getting the players ready… ${formatMegabytes(loaded)} / ${formatMegabytes(total)} MB`;
+const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
+world.broadphase = new CANNON.SAPBroadphase(world);
+world.allowSleep = true;
+
+let player;
+let field;
+let football;
+let offense;
+const chase = new THREE.Vector3();
+const wishForward = new THREE.Vector3();
+const wishRight = new THREE.Vector3();
+
+const shakeOffset = new THREE.Vector3();
+let shakeAmount = 0;
+let fovKick = 0;
+const baseFov = 74;
+
+function punch(amount) {
+    if (reduceMotion) return;
+    shakeAmount = Math.min(1, shakeAmount + amount);
+    fovKick = Math.min(5, fovKick + amount * 3.5);
+}
+
+function playList() {
+    return PRESET_PLAYS.concat(customs);
+}
+
+function refresh() {
+    const liveGain = offense && offense.isRunLive()
+        ? Math.round((carrierX() - drive.los) * 10) / 10
+        : null;
+    hud.setStats({
+        score: gameState.score,
+        catches: offense ? offense.catchCount : 0,
+        route: selected.name
+    });
+    const playLive = offense && offense.mode !== 'pre';
+    hud.setSituation({
+        down: formatDown(drive),
+        yard: formatYardLine(drive.los),
+        playClock: formatPlayClock(playLive ? drive.playClock : 40),
+        clock: formatClock(drive.clock),
+        gain: liveGain
+    });
+}
+
+function carrierX() {
+    if (!offense) return drive.los;
+    if (offense.mode === 'keeper') return camera.position.x;
+    if (offense.mode === 'handoff') return offense.carrierX();
+    return drive.los;
+}
+
+function setThrowLabel(text) {
+    const button = document.getElementById('touch-throw');
+    if (button) button.textContent = text;
+}
+
+function spotOffense() {
+    offense.spot(drive.los);
+    const pocket = qbSpot(drive.los);
+    player.placePocket(pocket.x, pocket.z);
+    player.setRunControl({ attack: false, look: true, suspended: false, cruise: 5.4 });
+    football.setHandVisible(true);
+    setThrowLabel('Throw');
+    playClockWhistled = false;
+}
+
+function showOutcome(scored) {
+    hud.showResult(scored);
+    if (scored.touchdown) {
+        sfx.touchdown();
+        punch(0.7);
+    } else if (scored.points > 0) {
+        sfx.catch();
+        punch(0.3);
+    } else {
+        sfx.incomplete();
     }
+    if (scored.points > 0) gameState.score += scored.points;
 }
 
-function noteModelProgress(url, event) {
-    recordModelBytes(url, event);
-    renderLoadProgress();
+function applyResolved(resolved, scored) {
+    drive = resolved.drive;
+    if (resolved.outcome === 'turnover') scored = { ...scored, label: 'TURNOVER', touchdown: false };
+    if (resolved.outcome === 'time') scored = { label: 'TIME', points: 0, touchdown: false };
+    showOutcome(scored);
+    spotOffense();
+    refresh();
 }
 
-loadingManager.onProgress = (_url, itemsLoaded, itemsTotal) => {
-    noteItems(itemsLoaded, itemsTotal);
-    renderLoadProgress();
-};
+function onThrowResult(result) {
+    if (!offense || offense.isRunLive() || offense.mode === 'pre') return;
+    const caught = result.points > 0;
+    const gain = caught ? result.receiverX - drive.los : 0;
+    const resolved = resolveDrive(drive, {
+        gain,
+        incomplete: !caught,
+        touchdown: result.touchdown === true
+    });
+    applyResolved(resolved, result);
+}
+
+function endRun() {
+    if (!offense || !offense.isRunLive()) return;
+    const x = carrierX();
+    const resolved = resolveDrive(drive, { gain: x - drive.los, touchdown: x >= 50 });
+    const scored = scoreRun({ gain: resolved.gain, touchdown: resolved.outcome === 'touchdown' });
+    applyResolved(resolved, scored);
+}
+
+function runHike() {
+    if (!gameState.ready || gameState.designing || gameState.paused || drive.over) return;
+    if (offense.mode !== 'pre') return;
+    hud.hidePlaybook();
+    offense.setPlay(selected);
+    const kind = offense.snap();
+    drive = snapDrive(drive);
+    playClockWhistled = false;
+    if (kind === 'keeper') player.setRunControl({ attack: false, look: true, suspended: false, cruise: 8.6 });
+    else if (kind === 'handoff') {
+        player.setRunControl({ attack: false, look: false, suspended: true, cruise: 5.4 });
+        if (document.pointerLockElement) document.exitPointerLock();
+    } else player.setRunControl({ attack: true, look: true, suspended: false, cruise: 5.4 });
+    // Pass plays can throw. Runs cannot. Pre-snap cannot, until the hike above.
+    football.setHandVisible(kind !== 'handoff');
+    setThrowLabel(isRun(kind) ? 'Down' : 'Throw');
+    if (!hinted) {
+        hinted = true;
+        hud.hideHint();
+    }
+    refresh();
+}
+
+function selectPlay(play) {
+    selected = play;
+    if (offense.mode === 'pre') offense.setPlay(play);
+    hud.hidePlaybook();
+    refresh();
+}
+
+function openPlaybook() {
+    if (gameState.designing) return;
+    if (document.pointerLockElement) document.exitPointerLock();
+    const plays = playList();
+    hud.renderPlaybook(plays, selected.id, selectPlay, deletePlay, () => hud.hidePlaybook());
+}
+
+function deletePlay(id) {
+    customs = saveCustomPlays(customs.filter((play) => play.id !== id));
+    if (selected.id === id) selected = PRESET_PLAYS[0];
+    if (offense.mode === 'pre') offense.setPlay(selected);
+    openPlaybook();
+    refresh();
+}
+
+function openDesigner() {
+    if (offense.mode !== 'pre' || gameState.paused) return;
+    gameState.designing = true;
+    hud.hidePlaybook();
+    if (document.pointerLockElement) document.exitPointerLock();
+    designer.open(selected);
+}
+
+function closeDesigner() {
+    gameState.designing = false;
+    designer.close();
+}
+
+const designer = mountDesigner({
+    root: document.getElementById('designer'),
+    onClose: closeDesigner,
+    onSave: (draft) => {
+        const play = normalizePlay({
+            ...draft,
+            id: `custom-${Date.now()}`,
+            custom: true,
+            kind: 'pass',
+            name: draft.name && draft.name.trim() ? draft.name.trim() : 'My play'
+        });
+        customs = saveCustomPlays([play, ...customs.filter((item) => item.name !== play.name)]);
+        selected = customs[0] || play;
+        offense.setPlay(selected);
+        closeDesigner();
+        refresh();
+    }
+});
 
 function revealGame() {
     if (gameState.ready) return;
     gameState.ready = true;
-    if (player) player.setInputEnabled(true);
-
+    player.setInputEnabled(true);
     if (touchMode && !touchControlsMounted) {
         touchControlsMounted = true;
         mountTouchControls({
             player,
-            getPaused: () => gameState.paused,
-            onNewBall: () => player.requestNewBall(),
-            onStartRoute: () => runStartRoute(),
-            onReset: () => runResetReceiver()
+            getPaused: () => gameState.paused || gameState.designing,
+            onHike: () => runHike(),
+            onPlays: () => openPlaybook(),
+            onDraw: () => openDesigner(),
+            onReset: () => {
+                if (offense.isRunLive()) endRun();
+                else if (offense.mode === 'pass' && !football.liveBall()) {
+                    applyResolved(resolveDrive(drive, { incomplete: true }), { label: 'INCOMPLETE', points: 0, touchdown: false });
+                } else if (offense.mode === 'pre') {
+                    offense.setPlay(selected);
+                    refresh();
+                }
+            },
+            onThrowStart: () => {
+                if (offense.isRunLive()) endRun();
+                else player.startThrow();
+            },
+            onThrowEnd: () => {
+                if (!offense.isRunLive()) player.endThrow();
+            }
         });
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', onWindowResize);
-        }
+        if (window.visualViewport) window.visualViewport.addEventListener('resize', onWindowResize);
     }
-
     gameContainer.classList.remove('is-loading');
     loadingScreen.setAttribute('aria-busy', 'false');
     loadingScreen.classList.add('is-done');
-
     const hideGate = () => {
         loadingScreen.setAttribute('aria-hidden', 'true');
         loadingScreen.style.display = 'none';
@@ -91,530 +294,266 @@ function revealGame() {
     window.setTimeout(hideGate, 450);
 }
 
-loadingManager.onLoad = () => {
-    renderLoadProgress();
-    if (loadFailed) return;
-    revealGame();
-};
+const shakeDecay = () => {};
+void shakeDecay;
 
-loadingManager.onError = (url) => {
-    loadFailed = true;
-    console.error('Failed to load player model:', url);
-    if (loadingStatus) {
-        loadingStatus.textContent = 'Couldn’t load the players. Use Back or refresh to try again.';
-    }
-};
-
-// Create score display
-const scoreDisplay = document.createElement('div');
-scoreDisplay.id = 'score-display';
-scoreDisplay.style.position = 'absolute';
-scoreDisplay.style.top = '20px';
-scoreDisplay.style.right = '20px';
-scoreDisplay.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-scoreDisplay.style.color = 'white';
-scoreDisplay.style.padding = '10px';
-scoreDisplay.style.borderRadius = '5px';
-scoreDisplay.style.zIndex = '100';
-scoreDisplay.innerHTML = 'Score: 0';
-document.getElementById('game-container').appendChild(scoreDisplay);
-
-// Create catch counter display
-const catchCounter = document.createElement('div');
-catchCounter.id = 'catch-counter';
-catchCounter.style.position = 'absolute';
-catchCounter.style.top = '60px';
-catchCounter.style.right = '20px';
-catchCounter.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-catchCounter.style.color = 'white';
-catchCounter.style.padding = '10px';
-catchCounter.style.borderRadius = '5px';
-catchCounter.style.zIndex = '100';
-catchCounter.style.fontSize = '24px';
-catchCounter.style.fontWeight = 'bold';
-catchCounter.innerHTML = 'Catches: 0';
-document.getElementById('game-container').appendChild(catchCounter);
-
-// Create crosshair
-const crosshair = document.createElement('div');
-crosshair.id = 'crosshair';
-crosshair.style.position = 'absolute';
-crosshair.style.top = '50%';
-crosshair.style.left = '50%';
-crosshair.style.transform = 'translate(-50%, -50%)';
-crosshair.style.zIndex = '100';
-crosshair.style.pointerEvents = 'none'; // Ensure it doesn't interfere with clicks
-
-// Add CSS animation for the crosshair
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes pulse {
-        0% { opacity: 0.8; }
-        50% { opacity: 1; }
-        100% { opacity: 0.8; }
-    }
-    
-    #crosshair-circle {
-        animation: pulse 2s infinite ease-in-out;
-        transition: all 0.2s ease-out;
-    }
-`;
-document.head.appendChild(style);
-
-// Create a circular crosshair
-crosshair.innerHTML = `
-    <div id="crosshair-circle" style="
-        width: 40px;
-        height: 40px;
-        border: 2px solid white;
-        border-radius: 50%;
-        position: relative;
-    ">
-        <div id="crosshair-dot" style="
-            position: absolute;
-            width: 4px;
-            height: 4px;
-            background-color: white;
-            border-radius: 50%;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-        "></div>
-    </div>
-`;
-document.getElementById('game-container').appendChild(crosshair);
-
-// Create throw power indicator
-const throwPowerIndicator = document.createElement('div');
-throwPowerIndicator.id = 'throw-power-indicator';
-throwPowerIndicator.style.position = 'absolute';
-throwPowerIndicator.style.bottom = '50px';
-throwPowerIndicator.style.left = '50%';
-throwPowerIndicator.style.transform = 'translateX(-50%)';
-throwPowerIndicator.style.width = '200px';
-throwPowerIndicator.style.height = '20px';
-throwPowerIndicator.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-throwPowerIndicator.style.borderRadius = '10px';
-throwPowerIndicator.style.overflow = 'hidden';
-throwPowerIndicator.style.zIndex = '100';
-throwPowerIndicator.style.display = 'none'; // Hidden by default
-
-const powerBar = document.createElement('div');
-powerBar.id = 'power-bar';
-powerBar.style.width = '0%';
-powerBar.style.height = '100%';
-powerBar.style.backgroundColor = 'red';
-powerBar.style.transition = 'width 0.1s';
-throwPowerIndicator.appendChild(powerBar);
-
-document.getElementById('game-container').appendChild(throwPowerIndicator);
-
-// Create controls info display
-const controlsInfo = document.createElement('div');
-controlsInfo.id = 'controls-info';
-controlsInfo.style.position = 'absolute';
-controlsInfo.style.bottom = '20px';
-controlsInfo.style.left = '20px';
-controlsInfo.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-controlsInfo.style.color = 'white';
-controlsInfo.style.padding = '10px';
-controlsInfo.style.borderRadius = '5px';
-controlsInfo.style.zIndex = '100';
-controlsInfo.innerHTML = `
-    <h3>Controls:</h3>
-    <p>Mouse: Look around</p>
-    <p>WASD/Arrow Keys: Move</p>
-    <p>Spacebar: Throw (hold to charge)</p>
-    <p>ESC: Pause game</p>
-    <p>Q: Get new football</p>
-    <p>E: Start receiver route</p>
-    <p>R: Reset receiver</p>
-    <p>T: Open route selection menu</p>
-    <p>F: Toggle field view</p>
-`;
-document.getElementById('game-container').appendChild(controlsInfo);
-
-// Create route menu
-const routeMenu = document.createElement('div');
-routeMenu.id = 'route-menu';
-routeMenu.style.position = 'absolute';
-routeMenu.style.top = 'calc(72px + env(safe-area-inset-top, 0px))';
-routeMenu.style.left = 'calc(16px + env(safe-area-inset-left, 0px))';
-routeMenu.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-routeMenu.style.color = 'white';
-routeMenu.style.padding = '15px';
-routeMenu.style.borderRadius = '5px';
-routeMenu.style.zIndex = '100';
-routeMenu.style.minWidth = '200px';
-routeMenu.style.display = 'none'; // Hidden by default
-document.getElementById('game-container').appendChild(routeMenu);
-
-// Create route display
-const routeDisplay = document.createElement('div');
-routeDisplay.id = 'route-display';
-routeDisplay.style.position = 'absolute';
-routeDisplay.style.top = '100px';
-routeDisplay.style.right = '20px';
-routeDisplay.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-routeDisplay.style.color = 'white';
-routeDisplay.style.padding = '10px';
-routeDisplay.style.borderRadius = '5px';
-routeDisplay.style.zIndex = '100';
-routeDisplay.style.fontSize = '18px';
-routeDisplay.style.fontWeight = 'bold';
-routeDisplay.innerHTML = 'Route: Seam';
-document.getElementById('game-container').appendChild(routeDisplay);
-
-// Pause menu
-const pauseMenu = document.createElement('div');
-pauseMenu.id = 'pause-menu';
-pauseMenu.style.position = 'absolute';
-pauseMenu.style.top = '50%';
-pauseMenu.style.left = '50%';
-pauseMenu.style.transform = 'translate(-50%, -50%)';
-pauseMenu.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-pauseMenu.style.color = 'white';
-pauseMenu.style.padding = '20px';
-pauseMenu.style.borderRadius = '10px';
-pauseMenu.style.textAlign = 'center';
-pauseMenu.style.zIndex = '1000';
-pauseMenu.style.display = 'none';
-pauseMenu.innerHTML = `
-    <h2>Game Paused</h2>
-    <p>Press ESC to resume</p>
-    <button id="resume-button">Resume Game</button>
-`;
-document.getElementById('game-container').appendChild(pauseMenu);
-
-// Scene setup
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87CEEB); // Sky blue
-scene.fog = new THREE.Fog(0x87CEEB, 100, 1000); // Color matches sky, starts at 100 units, ends at 1000 units
-
-// Camera setup
-const camera = new THREE.PerspectiveCamera(85, window.innerWidth / window.innerHeight, 0.1, 2000);
-
-// Renderer setup
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
-document.getElementById('game-container').appendChild(renderer.domElement);
-
-if (touchMode) {
-    const canvas = renderer.domElement;
-    canvas.style.touchAction = 'none';
-    canvas.style.userSelect = 'none';
-    canvas.style.webkitUserSelect = 'none';
-    canvas.style.webkitTouchCallout = 'none';
-}
-
-// Physics world
-const world = new CANNON.World({
-    gravity: new CANNON.Vec3(0, -9.82, 0)
-});
-
-// Game objects
-let player, field, football;
-
-// Function to update route menu
-function updateRouteMenu() {
-    if (!field || !field.receiver) return;
-    
-    const routes = field.getReceiverRoutes();
-    const currentRoute = field.getCurrentReceiverRoute();
-    
-    let menuHTML = `
-        <h3>Route Selection</h3>
-        <ul style="list-style-type: none; padding: 0; margin: 0;">
-    `;
-    
-    routes.forEach(route => {
-        const isSelected = route === currentRoute;
-        const style = isSelected ? 
-            'background-color: #3498db; color: white; font-weight: bold;' : 
-            'background-color: #2c3e50;';
-        
-        menuHTML += `
-            <li style="padding: 8px; margin: 5px 0; border-radius: 3px; cursor: pointer; ${style}" 
-                onclick="selectRoute('${route}')">
-                ${route.charAt(0).toUpperCase() + route.slice(1)}
-            </li>
-        `;
-    });
-    
-    menuHTML += `
-        </ul>
-        <div style="margin-top: 10px; text-align: center;">
-            <button style="padding: 8px 15px; background-color: #27ae60; border: none; color: white; border-radius: 3px; cursor: pointer;" 
-                onclick="closeRouteMenu()">Close</button>
-        </div>
-    `;
-    
-    routeMenu.innerHTML = menuHTML;
-}
-
-// Route menu functions
-function openRouteMenu() {
-    updateRouteMenu();
-    routeMenu.style.display = 'block';
-    gameState.paused = true; // Pause the game while menu is open
-}
-
-function closeRouteMenu() {
-    routeMenu.style.display = 'none';
-    gameState.paused = false; // Resume the game
-}
-
-function selectRoute(routeName) {
-    if (field) {
-        field.startReceiverRoute(routeName);
-        closeRouteMenu();
-        routeDisplay.innerHTML = `Route: ${routeName.charAt(0).toUpperCase() + routeName.slice(1)}`;
-    }
-}
-
-// Make these functions available globally
-window.openRouteMenu = openRouteMenu;
-window.closeRouteMenu = closeRouteMenu;
-window.selectRoute = selectRoute;
-
-function runStartRoute() {
-    const currentRoute = field.startReceiverRoute();
-    if (currentRoute) {
-        routeDisplay.innerHTML = `Route: ${currentRoute.charAt(0).toUpperCase() + currentRoute.slice(1)}`;
-    }
-    console.log("Receiver running route");
-}
-
-function runResetReceiver() {
-    field.resetReceiver();
-    console.log("Receiver reset");
-}
-
-// Pause/resume functionality
 function togglePause() {
+    if (designer.isOpen()) {
+        closeDesigner();
+        return;
+    }
+    if (hud.playbookOpen()) {
+        hud.hidePlaybook();
+        return;
+    }
     gameState.paused = !gameState.paused;
-    pauseMenu.style.display = gameState.paused ? 'block' : 'none';
-    
+    hud.setPaused(gameState.paused);
     if (gameState.paused) {
-        // Unlock pointer when pausing
-        document.exitPointerLock();
-    } else if (!touchMode) {
-        // Request pointer lock when resuming. Touch play never pointer-locks.
+        player.cancelThrow();
+        football.setCharging(null);
+        if (document.pointerLockElement) {
+            ignoreUnlock = true;
+            document.exitPointerLock();
+        }
+    } else if (!touchMode && player.allowLook) {
         renderer.domElement.requestPointerLock();
     }
 }
 
-// Event listeners for pause menu
-document.addEventListener('keydown', (event) => {
-    if (!gameState.ready) {
-        const target = event.target;
-        if (!(target && target.closest && target.closest('#back-link'))) {
-            event.preventDefault();
-            event.stopPropagation();
-        }
+let ignoreUnlock = false;
+document.addEventListener('pointerlockchange', () => {
+    if (touchMode || !gameState.ready || player.suspended) return;
+    if (document.pointerLockElement === renderer.domElement) return;
+    if (ignoreUnlock) {
+        ignoreUnlock = false;
         return;
     }
-    if (event.key === 'Escape') {
-        togglePause();
-    } else if (event.key === 'e' || event.key === 'E') {
-        // Start receiver route on E key
-        runStartRoute();
-    } else if (event.key === 'r' || event.key === 'R') {
-        // Reset receiver on R key
-        runResetReceiver();
-    } else if (event.key === 't' || event.key === 'T') {
-        // Open route selection menu on T key
-        openRouteMenu();
-        console.log("Route menu opened");
-    } else if (event.key === 'f' || event.key === 'F') {
-        // Toggle between stadium and simple field
-        const isStadiumShown = field.toggleField();
-        console.log(`Stadium view ${isStadiumShown ? 'enabled' : 'disabled'}`);
+    if (!gameState.paused && !gameState.designing && !hud.playbookOpen()) {
+        gameState.paused = true;
+        hud.setPaused(true);
+        player.cancelThrow();
+    }
+});
+
+function toggleMute() {
+    sfx.setMuted(!sfx.isMuted());
+    hud.setMuted(sfx.isMuted());
+}
+
+hud.setMuted(sfx.isMuted());
+hud.fillPauseHelp(touchMode ? [
+    'Plays picks a call. Draw builds your own.',
+    'Hike snaps. Drag to aim, hold Throw to pass.',
+    'On a run, move and tap Down.',
+    'Left stick moves the ball carrier.'
+] : [
+    '1–6 select a play, P opens the playbook, D draws',
+    'E hikes. Mouse or Space throws.',
+    'Keeper and Handoff: move, Space whistles the play',
+    'F stands, M mute, Esc pause'
+]);
+if (touchMode) {
+    document.getElementById('pause-note').textContent = 'Tap Resume to continue';
+}
+
+document.addEventListener('keydown', (event) => {
+    if (event.code === 'KeyM') toggleMute();
+    if (!gameState.ready || gameState.designing) return;
+    if (event.key === 'Escape') togglePause();
+    else if (event.key === 'e' || event.key === 'E') runHike();
+    else if (event.key === 'p' || event.key === 'P' || event.key === 't' || event.key === 'T') {
+        if (hud.playbookOpen()) hud.hidePlaybook();
+        else openPlaybook();
+    } else if (event.key === 'd' || event.key === 'D' || event.key === 'b' || event.key === 'B') openDesigner();
+    else if (event.key === 'f' || event.key === 'F') field.toggleField();
+    else if (event.key === 'r' || event.key === 'R') {
+        if (offense.isRunLive()) endRun();
+        else if (offense.mode === 'pass' && !football.liveBall()) {
+            applyResolved(resolveDrive(drive, { incomplete: true }), { label: 'INCOMPLETE', points: 0, touchdown: false });
+        } else if (offense.mode === 'pre') offense.setPlay(selected);
+    } else if (event.code === 'Space' && offense.isRunLive()) {
+        event.preventDefault();
+        endRun();
+    } else if (/^[1-9]$/.test(event.key)) {
+        const play = playList()[Number(event.key) - 1];
+        if (play && offense.mode === 'pre') selectPlay(play);
     }
 });
 
 document.getElementById('resume-button').addEventListener('click', () => {
-    togglePause();
-    // Request pointer lock when clicking resume
-    if (!touchMode) {
-        renderer.domElement.requestPointerLock();
-    }
+    if (gameState.paused) togglePause();
 });
+document.getElementById('plays-launch').addEventListener('click', () => openPlaybook());
+document.getElementById('draw-launch').addEventListener('click', () => openDesigner());
+document.getElementById('mute-button').addEventListener('click', toggleMute);
+window.addEventListener('pointerdown', () => sfx.unlock(), { once: true });
+window.addEventListener('keydown', () => sfx.unlock(), { once: true });
 
-// Lighting
-function setupLighting() {
-    // Increased ambient light for better overall visibility
-    const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.8);
-    scene.add(ambientLight);
-    
-    // Main directional light (sun)
-    const directionalLight = new THREE.DirectionalLight(0xFFFFFF, 1.0);
-    directionalLight.position.set(50, 100, 0);
-    directionalLight.castShadow = true;
-    directionalLight.shadow.mapSize.width = 2048;
-    directionalLight.shadow.mapSize.height = 2048;
-    directionalLight.shadow.camera.left = -100;
-    directionalLight.shadow.camera.right = 100;
-    directionalLight.shadow.camera.top = 100;
-    directionalLight.shadow.camera.bottom = -100;
-    scene.add(directionalLight);
-    
-    // Additional directional light from behind to highlight the field
-    const backLight = new THREE.DirectionalLight(0xFFFFFF, 0.4);
-    backLight.position.set(-50, 80, -100);
-    scene.add(backLight);
-    
-    // Add a spotlight to illuminate the field ahead
-    const spotLight = new THREE.SpotLight(0xFFFFFF, 0.6);
-    spotLight.position.set(0, 50, -50);
-    spotLight.angle = Math.PI / 4;
-    spotLight.penumbra = 0.1;
-    spotLight.decay = 1;
-    spotLight.distance = 200;
-    scene.add(spotLight);
-}
-
-// Initialize game
-function init() {
-    // Add camera to scene first
-    scene.add(camera);
-    
-    // Create game objects. Models load through the shared manager; the gate
-    // stays up until both GLBs have downloaded and decoded.
-    player = new Player(camera, renderer, world, {
-        touch: touchMode,
-        loader: modelLoader,
-        modelUrl: modelUrls.quarterback,
-        onLoadProgress: (event) => noteModelProgress(modelUrls.quarterback, event)
-    });
-    field = new Field(scene, world, {
-        loader: modelLoader,
-        receiverUrl: modelUrls.receiver,
-        onReceiverProgress: (event) => noteModelProgress(modelUrls.receiver, event)
-    });
-    football = new Football(scene, world, camera, field);
-    
-    setupLighting();
-    
-    // Initialize route display with default route
-    if (field && field.receiver) {
-        const currentRoute = field.getCurrentReceiverRoute();
-        if (currentRoute) {
-            routeDisplay.innerHTML = `Route: ${currentRoute.charAt(0).toUpperCase() + currentRoute.slice(1)}`;
-        }
+function whistlePlayClock() {
+    if (playClockWhistled || !offense) return;
+    if (offense.isRunLive()) {
+        playClockWhistled = true;
+        endRun();
+    } else if (offense.mode === 'pass' && football && !football.liveBall()) {
+        playClockWhistled = true;
+        applyResolved(resolveDrive(drive, { incomplete: true }), { label: 'DELAY', points: 0, touchdown: false });
     }
-
-    // Event listeners
-    window.addEventListener('resize', onWindowResize);
-    // Note: Player class already sets up its own event listeners
 }
 
-// Handle window resize
-function onWindowResize() {
+function setupLighting() {
+    scene.add(new THREE.AmbientLight(0xfff4e4, 0.38));
+    scene.add(new THREE.HemisphereLight(0x9ecbff, 0x3d6a32, 0.62));
+    sun = new THREE.DirectionalLight(0xfff1d0, 1.55);
+    sun.position.set(18, 46, 14);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.near = 2;
+    sun.shadow.camera.far = 90;
+    sun.shadow.camera.left = -26;
+    sun.shadow.camera.right = 26;
+    sun.shadow.camera.top = 18;
+    sun.shadow.camera.bottom = -18;
+    sun.shadow.bias = -0.001;
+    sun.target.position.set(4, 0, 0);
+    scene.add(sun);
+    scene.add(sun.target);
+}
+
+function applyResolution() {
     let width = window.innerWidth;
     let height = window.innerHeight;
     if (touchMode && window.visualViewport) {
         width = window.visualViewport.width;
         height = window.visualViewport.height;
     }
-    camera.aspect = width / height;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, touchMode ? 1.5 : 2));
+    camera.aspect = width / Math.max(1, height);
     camera.updateProjectionMatrix();
     renderer.setSize(width, height);
-    player.handleResize();
 }
 
-// Helper function to get color based on throw power
-function getColorForPower(power) {
-    // Start with green, transition to yellow, then red as power increases
-    if (power < 0.5) {
-        // Green to yellow (0 to 0.5)
-        const r = Math.floor(255 * (power * 2));
-        const g = 255;
-        const b = 0;
-        return `rgb(${r}, ${g}, ${b})`;
-    } else {
-        // Yellow to red (0.5 to 1.0)
-        const r = 255;
-        const g = Math.floor(255 * (1 - (power - 0.5) * 2));
-        const b = 0;
-        return `rgb(${r}, ${g}, ${b})`;
+function onWindowResize() {
+    applyResolution();
+}
+
+function noteThrown() {
+    if (!hinted) {
+        hinted = true;
+        hud.hideHint();
     }
+    sfx.throw();
+    punch(0.28);
 }
 
-// Game loop
+function init() {
+    scene.add(camera);
+    player = new Player(camera, renderer, world, { touch: touchMode });
+    field = new Field(scene, world);
+    offense = new Offense(scene, { shadows: true });
+    field.bindOffense(offense);
+    offense.setPlay(selected);
+    offense.spot(0);
+    player.placePocket(QB_OFFSET.x, QB_OFFSET.z);
+    football = new Football(scene, world, camera, field, { onResult: onThrowResult });
+    setupLighting();
+    refresh();
+    applyResolution();
+    window.addEventListener('resize', onWindowResize);
+    revealGame();
+}
+
 const clock = new THREE.Clock();
+let perfFrames = 0;
+let perfStamp = performance.now();
+
 function animate() {
     requestAnimationFrame(animate);
-    
-    // Skip updates if game is paused
-    if (gameState.paused) {
-        return;
+    const delta = Math.min(clock.getDelta(), 0.05);
+    camera.position.sub(shakeOffset);
+    shakeOffset.set(0, 0, 0);
+
+    if (!gameState.paused && gameState.ready && !gameState.designing) {
+        if (drive.running && !hud.playbookOpen()) drive = tickClock(drive, delta);
+        const playLive = offense && offense.mode !== 'pre' && !hud.playbookOpen();
+        drive = tickPlayClock(drive, delta, playLive);
+        if (playLive && drive.playClock <= 0) whistlePlayClock();
+        if (drive.over && !gameState.timeShown) {
+            gameState.timeShown = true;
+            hud.showResult({ label: 'TIME', points: 0, touchdown: false });
+            drive = freshDrive();
+            spotOffense();
+            gameState.timeShown = false;
+        }
+        world.step(1 / 60, delta, 3);
+        if (offense.mode === 'handoff') {
+            const wish = player.getWish();
+            camera.getWorldDirection(wishForward);
+            wishForward.y = 0;
+            if (wishForward.lengthSq() < 1e-4) wishForward.set(1, 0, 0);
+            wishForward.normalize();
+            wishRight.crossVectors(camera.up, wishForward).normalize();
+            offense.moveCarrier(
+                wishForward.x * wish.forward + wishRight.x * wish.right,
+                wishForward.z * wish.forward + wishRight.z * wish.right,
+                delta
+            );
+            chase.set(offense.rb.x - 7, 2.5, offense.rb.z);
+            camera.position.lerp(chase, 1 - Math.exp(-delta * 7));
+            camera.lookAt(offense.rb.x + 9, 1.15, offense.rb.z);
+        } else {
+            player.update(delta);
+        }
+        offense.update(delta, football.liveBall());
+        if (offense.isRunLive()) {
+            const x = carrierX();
+            const z = offense.mode === 'keeper' ? camera.position.z : offense.rb.z;
+            if (x >= 50 || Math.abs(z) > 24.5) endRun();
+        }
+        if (player.consumeFullChargeTick()) sfx.full();
+        const throwData = player.attackEnabled ? player.getThrowData() : null;
+        if (throwData && offense.mode === 'pass') {
+            const thrown = football.throw(throwData.power);
+            if (thrown) noteThrown();
+        }
+        if (player.getNewFootballRequest()) football.putBallInHand();
+        const charging = offense.mode === 'pass' && player.isChargingThrow();
+        football.setCharging(charging ? player.getThrowPower() : null);
+        football.update();
+        hud.setPower(charging ? player.getThrowPower() : null, football.getReadout());
+        if (sun) {
+            sun.position.set(drive.los + 12, 46, 16);
+            sun.target.position.set(drive.los + 4, 0, 0);
+            sun.target.updateMatrixWorld();
+        }
+        refresh();
     }
-    
-    const delta = Math.min(clock.getDelta(), 0.1);
-    
-    // Update physics
-    world.step(1/60, delta);
-    
-    // Update football position
-    football.update();
-    
-    // Update player
-    player.update(delta);
-    
-    // Update field elements (including receiver)
-    field.update(delta);
-    
-    // Update catch counter display
-    catchCounter.innerHTML = `Catches: ${field.getReceiverCatchCount()}`;
-    
-    // Check if player is throwing
-    const throwData = player.getThrowData();
-    if (throwData) {
-        football.throw(throwData.direction, throwData.power);
+
+    if (!reduceMotion && shakeAmount > 0) {
+        const mag = shakeAmount * 0.05;
+        shakeOffset.set((Math.random() - 0.5) * mag, (Math.random() - 0.5) * mag * 0.6, 0);
+        camera.position.add(shakeOffset);
+        shakeAmount = Math.max(0, shakeAmount - delta * 2.2);
     }
-    
-    // Check if player has requested a new football with Q key
-    if (player.getNewFootballRequest()) {
-        football.forceNewFootball();
+    if (fovKick > 0 || camera.fov !== baseFov) {
+        fovKick = Math.max(0, fovKick - delta * 16);
+        const next = baseFov + (reduceMotion ? 0 : fovKick);
+        if (Math.abs(camera.fov - next) > 0.02) {
+            camera.fov = next;
+            camera.updateProjectionMatrix();
+        }
     }
-    
-    // Update throw power indicator and crosshair
-    if (player.isChargingThrow()) {
-        // Show power indicator
-        throwPowerIndicator.style.display = 'block';
-        powerBar.style.width = `${player.getThrowPower() * 100}%`;
-        
-        // Change crosshair color based on throw power
-        const power = player.getThrowPower();
-        const color = getColorForPower(power);
-        
-        // Update crosshair color
-        document.getElementById('crosshair-circle').style.borderColor = color;
-        document.getElementById('crosshair-dot').style.backgroundColor = color;
-        
-        // Shrink the crosshair as power increases (more focused aim)
-        const minSize = 20; // Minimum size at full power
-        const maxSize = 40; // Maximum size at no power
-        const size = maxSize - (power * (maxSize - minSize));
-        
-        document.getElementById('crosshair-circle').style.width = `${size}px`;
-        document.getElementById('crosshair-circle').style.height = `${size}px`;
-    } else {
-        // Hide power indicator
-        throwPowerIndicator.style.display = 'none';
-        
-        // Reset crosshair color and size
-        document.getElementById('crosshair-circle').style.borderColor = 'white';
-        document.getElementById('crosshair-dot').style.backgroundColor = 'white';
-        document.getElementById('crosshair-circle').style.width = '40px';
-        document.getElementById('crosshair-circle').style.height = '40px';
-    }
-    
     renderer.render(scene, camera);
+    if (perfOn) {
+        perfFrames += 1;
+        const now = performance.now();
+        if (now - perfStamp >= 500) {
+            const info = renderer.info.render;
+            hud.setPerf(`${Math.round((perfFrames * 1000) / (now - perfStamp))} fps · ${info.triangles} tris · ${info.calls} draws`);
+            perfFrames = 0;
+            perfStamp = now;
+        }
+    }
 }
 
-// Start the game
 init();
 animate();

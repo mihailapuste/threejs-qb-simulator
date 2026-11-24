@@ -56,8 +56,12 @@ export function mountTouchControls({
     player,
     getPaused = () => false,
     onNewBall,
-    onStartRoute,
-    onReset
+    onHike,
+    onPlays,
+    onDraw,
+    onReset,
+    onThrowStart,
+    onThrowEnd
 }) {
     const root = document.createElement('div');
     root.id = 'touch-ui';
@@ -80,47 +84,27 @@ export function mountTouchControls({
 
     const utility = document.createElement('div');
     utility.id = 'touch-utility';
-    const newBallButton = makeUtilityButton('touch-new-ball', 'New ball');
-    const routeButton = makeUtilityButton('touch-start-route', 'Start route');
+    const hikeButton = makeUtilityButton('touch-hike', 'Hike');
+    const playsButton = makeUtilityButton('touch-plays', 'Plays');
+    const drawButton = makeUtilityButton('touch-draw', 'Draw');
     const resetButton = makeUtilityButton('touch-reset', 'Reset');
-    utility.append(newBallButton, routeButton, resetButton);
+    utility.append(hikeButton, playsButton, drawButton, resetButton);
 
     const throwButton = document.createElement('button');
     throwButton.id = 'touch-throw';
     throwButton.type = 'button';
     throwButton.className = 'touch-control';
     throwButton.textContent = 'Throw';
-    throwButton.setAttribute('aria-label', 'Hold to charge throw, release to throw');
+    throwButton.setAttribute('aria-label', 'Hold to charge the throw. Drag to aim. Release to throw.');
 
     actions.append(utility, throwButton);
 
-    const hint = document.createElement('div');
-    hint.id = 'touch-rotate-hint';
-    hint.innerHTML = `
-        <div class="touch-rotate-phone" aria-hidden="true"></div>
-        <p>Rotate your phone</p>
-    `;
-
-    root.append(lookZone, joystick, actions, hint);
+    root.append(lookZone, joystick, actions);
     document.getElementById('game-container').appendChild(root);
 
-    const instructions = document.getElementById('instructions');
-    if (instructions) {
-        instructions.innerHTML = `
-            <p>Drag the right side to aim</p>
-            <p>Hold Throw to charge, release to pass</p>
-            <p>Left stick moves · New ball, Start route, Reset</p>
-        `;
-    }
-
-    const controlsInfo = document.getElementById('controls-info');
-    if (controlsInfo) {
-        controlsInfo.style.display = 'none';
-    }
-
-    const pauseCopy = document.querySelector('#pause-menu p');
-    if (pauseCopy) {
-        pauseCopy.textContent = 'Tap Resume to continue';
+    const hint = document.getElementById('hint');
+    if (hint) {
+        hint.textContent = 'Plays or Draw, then Hike. Drag to aim. Hold Throw to pass.';
     }
 
     const canvas = player.renderer.domElement;
@@ -236,38 +220,53 @@ export function mountTouchControls({
     joystick.addEventListener('touchcancel', endStick, { passive: false });
     joystick.addEventListener('contextmenu', preventGesture);
 
-    if (onNewBall) bindTap(newBallButton, getPaused, onNewBall);
-    if (onStartRoute) bindTap(routeButton, getPaused, onStartRoute);
+    if (onHike) bindTap(hikeButton, getPaused, onHike);
+    if (onPlays) bindTap(playsButton, getPaused, onPlays);
+    if (onDraw) bindTap(drawButton, getPaused, onDraw);
     if (onReset) bindTap(resetButton, getPaused, onReset);
 
-    let throwTouches = 0;
-
-    const releaseThrow = (event) => {
-        event.preventDefault();
-        throwTouches = Math.max(0, throwTouches - event.changedTouches.length);
-        if (throwTouches === 0) {
-            throwButton.classList.remove('is-active');
-            player.endThrow();
-        }
-    };
+    let throwId = null;
+    let throwX = 0;
+    let throwY = 0;
 
     throwButton.addEventListener('touchstart', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        throwTouches += event.changedTouches.length;
+        if (throwId !== null) return;
+        const touch = event.changedTouches[0];
+        throwId = touch.identifier;
+        throwX = touch.clientX;
+        throwY = touch.clientY;
         throwButton.classList.add('is-active');
-        if (!getPaused() && !player.isChargingThrow()) {
-            player.startThrow();
+        if (!getPaused()) {
+            if (onThrowStart) onThrowStart();
+            else player.startThrow();
         }
     }, { passive: false });
-    throwButton.addEventListener('touchmove', preventGesture, { passive: false });
+
+    throwButton.addEventListener('touchmove', (event) => {
+        const touch = findTouch(event.changedTouches, throwId);
+        if (!touch) return;
+        event.preventDefault();
+        const dx = touch.clientX - throwX;
+        const dy = touch.clientY - throwY;
+        throwX = touch.clientX;
+        throwY = touch.clientY;
+        if (!getPaused()) player.lookBy(dx, dy);
+    }, { passive: false });
+
+    const releaseThrow = (event) => {
+        if (!findTouch(event.changedTouches, throwId)) return;
+        event.preventDefault();
+        throwId = null;
+        throwButton.classList.remove('is-active');
+        if (getPaused()) player.cancelThrow();
+        else if (onThrowEnd) onThrowEnd();
+        else player.endThrow();
+    };
     throwButton.addEventListener('touchend', releaseThrow, { passive: false });
     throwButton.addEventListener('touchcancel', releaseThrow, { passive: false });
     throwButton.addEventListener('contextmenu', preventGesture);
-
-    hint.addEventListener('touchstart', preventGesture, { passive: false });
-    hint.addEventListener('touchmove', preventGesture, { passive: false });
-    hint.addEventListener('contextmenu', preventGesture);
 
     const portraitQuery = window.matchMedia('(orientation: portrait)');
     const syncOrientation = () => {
