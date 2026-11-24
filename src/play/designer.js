@@ -24,6 +24,7 @@ export function mountDesigner({ root, onClose, onSave }) {
     const status = root.querySelector('#designer-status');
     let receivers = [];
     let selected = 0;
+    let snapToGrid = true;
     let history = [[], [], [], []];
     let drag = null;
     let stroke = null;
@@ -49,7 +50,7 @@ export function mountDesigner({ root, onClose, onSave }) {
     function hitReceiver(px, py) {
         const { width, height } = size();
         let best = -1;
-        let bestDist = 28;
+        let bestDist = 42;
         for (let i = 0; i < receivers.length; i += 1) {
             const dot = project(receivers[i].x, receivers[i].z, width, height);
             const dist = Math.hypot(dot.px - px, dot.py - py);
@@ -107,8 +108,11 @@ export function mountDesigner({ root, onClose, onSave }) {
             const spot = project(receiver.x, receiver.z, width, height);
             ctx.fillStyle = RECEIVER_COLORS[index];
             ctx.beginPath();
-            ctx.arc(spot.px, spot.py, index === selected ? 16 : 13, 0, Math.PI * 2);
+            ctx.arc(spot.px, spot.py, index === selected ? 26 : 22, 0, Math.PI * 2);
             ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = index === selected ? 4 : 3;
+            ctx.stroke();
             ctx.fillStyle = '#1b1b1b';
             ctx.font = '700 12px sans-serif';
             ctx.textAlign = 'center';
@@ -132,7 +136,8 @@ export function mountDesigner({ root, onClose, onSave }) {
             button.classList.toggle('is-selected', Number(button.dataset.receiver) === selected);
         });
         if (status) {
-            status.textContent = `Receiver ${selected + 1}. Drag a dot to align. Draw anywhere else for his route.`;
+            const snapLabel = snapToGrid ? 'Snap is on.' : 'Snap is off.';
+            status.textContent = `Receiver ${selected + 1}. ${snapLabel} Drag a ring to align. Draw anywhere else for his route.`;
         }
     }
 
@@ -167,7 +172,7 @@ export function mountDesigner({ root, onClose, onSave }) {
         const { width, height } = size();
         const yard = unproject(px, py, width, height);
         if (drag) {
-            const spot = clampAlignment(yard.x + drag.dx, yard.z + drag.dz);
+            const spot = clampAlignment(yard.x + drag.dx, yard.z + drag.dz, snapToGrid);
             receivers[drag.index].x = spot.x;
             receivers[drag.index].z = spot.z;
         } else if (stroke) {
@@ -212,6 +217,15 @@ export function mountDesigner({ root, onClose, onSave }) {
             draw();
         });
     });
+    const snapButton = root.querySelector('#designer-snap');
+    if (snapButton) {
+        snapButton.addEventListener('click', () => {
+            snapToGrid = !snapToGrid;
+            snapButton.classList.toggle('is-selected', snapToGrid);
+            snapButton.setAttribute('aria-pressed', snapToGrid ? 'true' : 'false');
+            draw();
+        });
+    }
     root.querySelector('#designer-undo').addEventListener('click', () => {
         const stack = history[selected];
         if (!stack.length) return;

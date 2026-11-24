@@ -1,7 +1,20 @@
 import { GOAL_X } from './plays.js';
 
 export function freshDrive() {
-    return { down: 1, toGo: 10, los: 0, clock: 120, running: false, over: false };
+    return { down: 1, toGo: 10, los: 0, clock: 120, playClock: 40, running: false, over: false };
+}
+
+export function formatYardLine(los) {
+    const fromMid = Number(los) || 0;
+    if (Math.abs(fromMid) < 0.5) return '50';
+    const line = Math.round(50 - Math.min(50, Math.abs(fromMid)));
+    if (line <= 0) return 'Goal';
+    return fromMid > 0 ? `OPP ${line}` : `OWN ${line}`;
+}
+
+export function formatPlayClock(seconds) {
+    const whole = Math.max(0, Math.ceil(Number(seconds) || 0));
+    return `:${String(whole).padStart(2, '0')}`;
 }
 
 export function formatClock(seconds) {
@@ -27,11 +40,17 @@ export function tickClock(drive, dt) {
 
 export function snapDrive(drive) {
     if (drive.over) return drive;
-    return { ...drive, running: true };
+    return { ...drive, running: true, playClock: 40 };
+}
+
+export function tickPlayClock(drive, dt, live) {
+    if (!live || drive.over) return drive;
+    const playClock = Math.max(0, (drive.playClock ?? 40) - dt);
+    return { ...drive, playClock };
 }
 
 function spotReset(drive) {
-    return { down: 1, toGo: 10, los: 0, clock: drive.clock, running: false, over: drive.clock <= 0 };
+    return { down: 1, toGo: 10, los: 0, clock: drive.clock, playClock: 40, running: false, over: drive.clock <= 0 };
 }
 
 /**

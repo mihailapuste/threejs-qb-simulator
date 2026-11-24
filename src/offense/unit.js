@@ -1,37 +1,9 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { LINEMEN, QB_OFFSET, RECEIVER_COLORS, isRun, worldPath } from '../game/plays.js';
+import { createAthletes, poseFor } from './athlete.js';
 
 const SPEED = 7.3;
 const ADJUST = 2.15;
-
-function paintedBox(width, height, depth, x, y, z, color) {
-    const geometry = new THREE.BoxGeometry(width, height, depth);
-    const paint = new THREE.Color(color);
-    const colors = new Float32Array(geometry.attributes.position.count * 3);
-    for (let i = 0; i < geometry.attributes.position.count; i += 1) {
-        colors[i * 3] = paint.r;
-        colors[i * 3 + 1] = paint.g;
-        colors[i * 3 + 2] = paint.b;
-    }
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geometry.translate(x, y, z);
-    return geometry;
-}
-
-function playerGeometry() {
-    const parts = [
-        paintedBox(0.2, 0.78, 0.2, -0.12, 0.39, 0, '#3a3f48'),
-        paintedBox(0.2, 0.78, 0.2, 0.12, 0.39, 0, '#3a3f48'),
-        paintedBox(0.52, 0.58, 0.28, 0, 1.05, 0, '#f4f4f4'),
-        paintedBox(0.16, 0.42, 0.16, -0.36, 1.12, 0.08, '#e7b89a'),
-        paintedBox(0.16, 0.42, 0.16, 0.36, 1.12, 0.08, '#e7b89a'),
-        paintedBox(0.32, 0.28, 0.32, 0, 1.52, 0, '#d9dde4')
-    ];
-    const geometry = mergeGeometries(parts, false);
-    geometry.computeVertexNormals();
-    return geometry;
-}
 
 function ribbonGeometry(points) {
     const geometry = new THREE.BufferGeometry();
@@ -77,18 +49,12 @@ export class Offense {
         this.runners = [];
         this.line = LINEMEN.map((man) => ({ ...man, x: 0, z: man.z }));
         this.rb = { x: -5.6, z: -1.7, route: [], step: 0, hop: 0, homeX: -5.6, homeZ: -1.7 };
-        this.dummy = new THREE.Object3D();
-        this.dummy.rotation.order = 'YXZ';
-        this.geometry = playerGeometry();
-        this.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0.02 });
-        this.mesh = new THREE.InstancedMesh(this.geometry, this.material, 11);
-        this.mesh.castShadow = shadows;
-        this.mesh.receiveShadow = false;
-        this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-        this.scene.add(this.mesh);
-        this.mesh.count = 11;
+        this.rig = createAthletes(scene, 11, shadows);
+        this.previewTime = 0;
+        this.previews = [];
 
         this.aimMeshes = [];
+        const previewGeometry = new THREE.SphereGeometry(0.18, 6, 5);
         for (let i = 0; i < 5; i += 1) {
             const group = new THREE.Group();
             const aim = new THREE.Mesh(
@@ -108,10 +74,18 @@ export class Offense {
                 );
                 ribbon.frustumCulled = false;
                 this.scene.add(ribbon);
+                const preview = new THREE.Mesh(
+                    previewGeometry,
+                    new THREE.MeshBasicMaterial({ color })
+                );
+                preview.visible = false;
+                this.scene.add(preview);
+                this.previews.push(preview);
                 this.runners.push({
                     index: i,
                     group,
                     ribbon,
+                    preview,
                     x: 0,
                     z: 0,
                     alignX: 0,
@@ -119,6 +93,8 @@ export class Offense {
                     route: [],
                     step: 0,
                     hop: 0,
+                    moving: false,
+                    phase: i * 0.8,
                     tint: color
                 });
             } else {
@@ -132,14 +108,10 @@ export class Offense {
         this.rbBall.position.set(0.15, 1.05, 0.2);
         this.rbBall.visible = false;
         this.rb.group.add(this.rbBall);
-        this._colors();
-    }
-
-    _colors() {
-        for (let i = 0; i < 4; i += 1) this.mesh.setColorAt(i, new THREE.Color(RECEIVER_COLORS[i]));
-        this.mesh.setColorAt(4, new THREE.Color('#e7c56a'));
-        for (let i = 0; i < 6; i += 1) this.mesh.setColorAt(5 + i, new THREE.Color('#2f6fbe'));
-        this.mesh.instanceColor.needsUpdate = true;
+        this.rb.phase = 1.2;
+        for (let i = 0; i < 4; i += 1) this.rig.setColor(i, new THREE.Color(RECEIVER_COLORS[i]));
+        this.rig.setColor(4, new THREE.Color('#e7c56a'));
+        for (let i = 0; i < 6; i += 1) this.rig.setColor(5 + i, new THREE.Color('#2f6fbe'));
     }
 
     setPlay(play) {
@@ -229,7 +201,8 @@ export class Offense {
         const dist = Math.hypot(dx, dz);
         if (dist < 0.4) {
             person.step += 1;
-            return person.step < points.length;
+            person.moving = person.step < points.length;
+            return person.moving;
         }
         const step = Math.min(dist, speed * dt);
         dx /= dist;
@@ -237,13 +210,16 @@ export class Offense {
         person.x += dx * step;
         person.z += dz * step;
         person.yaw = Math.atan2(dx, dz);
+        person.moving = true;
         return true;
     }
 
     update(dt, ball) {
         const live = this.mode !== 'pre';
+        this.previewTime += dt;
         for (let i = 0; i < this.runners.length; i += 1) {
             const runner = this.runners[i];
+            runner.moving = false;
             if (live) {
                 const path = worldPath(this.los, { x: runner.alignX, z: runner.alignZ, route: runner.route });
                 let tx = null;
@@ -261,6 +237,7 @@ export class Offense {
                     runner.hop = Math.max(0, runner.hop - dt * 3);
                 }
                 if (tx != null) {
+                    runner.moving = true;
                     const dx = tx - runner.x;
                     const dz = tz - runner.z;
                     const dist = Math.hypot(dx, dz) || 1;
@@ -279,7 +256,9 @@ export class Offense {
             this._placeGroup(runner.group, runner.x, hop, runner.z);
         }
 
+        this.rb.moving = false;
         if (this.mode === 'handoff') {
+            this.rb.moving = true;
             this.rb.yaw = this.rb.yaw || Math.PI / 2;
         } else if (live && this.mode === 'pass') {
             const path = worldPath(this.los, { x: this.rb.homeX, z: this.rb.homeZ, route: this.rb.route });
@@ -292,6 +271,7 @@ export class Offense {
             this._placeGroup(this.rb.group, this.rb.x, 0, this.rb.z);
         }
 
+        this._previewRoutes();
         this.phase += dt;
         const blocking = this.mode === 'keeper' || this.mode === 'handoff' ? 'run' : (live ? 'pass' : 'stance');
         for (let i = 0; i < this.line.length; i += 1) {
@@ -344,36 +324,72 @@ export class Offense {
 
     noteCatch(index) {
         this.catchCount += 1;
-        const color = index < 4 ? new THREE.Color('#b6ff9a') : new THREE.Color('#fff1b0');
-        this.mesh.setColorAt(index, color);
-        this.mesh.instanceColor.needsUpdate = true;
-        const restore = index < 4 ? this.runners[index].tint : new THREE.Color('#e7c56a');
-        window.setTimeout(() => {
-            this.mesh.setColorAt(index, restore);
-            this.mesh.instanceColor.needsUpdate = true;
-        }, 700);
+        const person = index < 4 ? this.runners[index] : this.rb;
+        person.hop = 1;
+        const color = index < 4 ? new THREE.Color('#d8ffc4') : new THREE.Color('#fff1b0');
+        this.rig.setColor(index, color);
+        const restore = index < 4 ? new THREE.Color(this.runners[index].tint) : new THREE.Color('#e7c56a');
+        window.setTimeout(() => this.rig.setColor(index, restore), 700);
+    }
+
+    _previewRoutes() {
+        const show = this.mode === 'pre';
+        for (let i = 0; i < this.runners.length; i += 1) {
+            const runner = this.runners[i];
+            const preview = runner.preview;
+            const path = worldPath(this.los, { x: runner.alignX, z: runner.alignZ, route: runner.route });
+            if (!show || path.length < 2) {
+                preview.visible = false;
+                continue;
+            }
+            const point = pointAlong(path, (this.previewTime * 0.22 + i * 0.18) % 1);
+            preview.visible = true;
+            preview.position.set(point.x, 0.35, point.z);
+        }
     }
 
     _writeInstances() {
-        const write = (index, x, y, z, yaw, crouch) => {
-            this.dummy.position.set(x, y, z);
-            this.dummy.rotation.set(crouch || 0, yaw || Math.PI / 2, 0);
-            this.dummy.updateMatrix();
-            this.mesh.setMatrixAt(index, this.dummy.matrix);
+        const time = this.phase;
+        const paint = (index, person, line) => {
+            const pose = poseFor({ ...person, line }, this.mode, time);
+            this.rig.write(index, {
+                x: person.x,
+                y: 0,
+                z: person.z,
+                yaw: person.yaw || Math.PI / 2,
+                ...pose
+            });
         };
-        for (let i = 0; i < this.runners.length; i += 1) {
-            const runner = this.runners[i];
-            const hop = Math.sin(Math.min(1, runner.hop) * Math.PI) * 0.65;
-            const crouch = this.mode === 'pre' ? 0.18 : 0;
-            write(i, runner.x, hop, runner.z, runner.yaw, crouch);
-        }
-        write(4, this.rb.x, 0, this.rb.z, this.rb.yaw, this.mode === 'pre' ? 0.2 : 0);
+        for (let i = 0; i < this.runners.length; i += 1) paint(i, this.runners[i], false);
+        paint(4, this.rb, false);
         for (let i = 0; i < this.line.length; i += 1) {
-            const man = this.line[i];
-            write(5 + i, man.x, 0, man.z, man.yaw, man.crouch);
+            paint(5 + i, { ...this.line[i], moving: this.mode === 'keeper' || this.mode === 'handoff', hop: 0, phase: i }, true);
         }
-        this.mesh.instanceMatrix.needsUpdate = true;
+        this.rig.commit();
     }
+}
+
+function pointAlong(path, t) {
+    let length = 0;
+    const spans = [];
+    for (let i = 1; i < path.length; i += 1) {
+        const span = Math.hypot(path[i].x - path[i - 1].x, path[i].z - path[i - 1].z);
+        spans.push(span);
+        length += span;
+    }
+    let remain = Math.max(0, length) * t;
+    for (let i = 1; i < path.length; i += 1) {
+        const span = spans[i - 1];
+        if (remain <= span || i === path.length - 1) {
+            const mix = span > 0 ? Math.min(1, remain / span) : 0;
+            return {
+                x: path[i - 1].x + (path[i].x - path[i - 1].x) * mix,
+                z: path[i - 1].z + (path[i].z - path[i - 1].z) * mix
+            };
+        }
+        remain -= span;
+    }
+    return path[path.length - 1];
 }
 
 function SIDELINE_Z() {

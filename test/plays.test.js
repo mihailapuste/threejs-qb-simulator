@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { clampAlignment, normalizePlay } from '../src/game/plays.js';
 import { smoothStroke } from '../src/game/stroke.js';
-import { formatClock, formatDown, freshDrive, resolveDrive, snapDrive, tickClock } from '../src/game/drive.js';
+import { formatClock, formatDown, formatPlayClock, formatYardLine, freshDrive, resolveDrive, snapDrive, tickClock, tickPlayClock } from '../src/game/drive.js';
 
 test('receivers snap behind the line and outside the offensive line', () => {
     const onLine = clampAlignment(2, 0);
@@ -13,6 +13,9 @@ test('receivers snap behind the line and outside the offensive line', () => {
     assert.equal(back.z, 0);
     const wide = clampAlignment(0, 40);
     assert.equal(wide.z, 22);
+    const free = clampAlignment(-4.2, 1.2, false);
+    assert.equal(free.x, -4.2);
+    assert.equal(free.z, 1.2);
 });
 
 test('a freehand stroke becomes a short smooth route that keeps its ends', () => {
@@ -66,6 +69,12 @@ test('a score across the goal line is a touchdown and the clock formats', () => 
     assert.equal(play.outcome, 'touchdown');
     assert.equal(play.drive.los, 0);
     assert.equal(formatClock(74), '1:14');
+    assert.equal(formatYardLine(0), '50');
+    assert.equal(formatYardLine(10), 'OPP 40');
+    assert.equal(formatYardLine(-10), 'OWN 40');
+    assert.equal(formatYardLine(50), 'Goal');
+    assert.equal(formatPlayClock(7), ':07');
+    assert.equal(tickPlayClock(snapDrive(freshDrive()), 5, true).playClock, 35);
     const ticking = tickClock({ ...freshDrive(), running: true, clock: 1.2 }, 2);
     assert.equal(ticking.over, true);
     assert.equal(formatDown({ down: 2, toGo: 8, los: 44 }), '2nd & Goal');

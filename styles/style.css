@@ -75,11 +75,16 @@ body {
 
 #situation {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
-    gap: 8px;
+    gap: 4px 10px;
     font-family: "Geist Mono", ui-monospace, monospace;
     font-size: 13px;
     letter-spacing: 0.02em;
+}
+
+#play-clock {
+    color: #DCF763;
 }
 
 #route-display {
@@ -364,6 +369,7 @@ body {
 .play-delete { flex: 0 0 52px !important; text-align: center !important; }
 .play-row button.is-selected,
 #designer-receivers button.is-selected,
+#designer-snap.is-selected,
 #playbook button:hover,
 #designer-bar button:hover {
     background: #DCF763;

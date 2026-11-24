@@ -310,13 +310,16 @@ class Football {
         this.scene.add(mesh);
         this.handMesh = null;
 
-        const trailGeometry = new THREE.BufferGeometry();
-        trailGeometry.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(TRAIL_POINTS * 3), 3));
-        const trail = new THREE.Line(trailGeometry, new THREE.LineBasicMaterial({
-            color: 0xFFF4D6,
-            transparent: true,
-            opacity: 0.7
-        }));
+        const trail = new THREE.Mesh(
+            new THREE.BufferGeometry(),
+            new THREE.ShaderMaterial({
+                transparent: true,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+                vertexShader: 'attribute vec4 color; varying vec4 vColor; void main(){ vColor = color; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+                fragmentShader: 'varying vec4 vColor; void main(){ gl_FragColor = vColor; }'
+            })
+        );
         trail.frustumCulled = false;
         trail.visible = false;
         this.scene.add(trail);
@@ -356,26 +359,51 @@ class Football {
     }
 
     pushTrail(ball, point) {
-        const positions = ball.trail.geometry.attributes.position;
-        const last = Math.max(0, ball.trailCount - 1);
-        if (ball.trailCount > 0) {
-            const px = positions.getX(Math.min(last, TRAIL_POINTS - 1));
-            const py = positions.getY(Math.min(last, TRAIL_POINTS - 1));
-            const pz = positions.getZ(Math.min(last, TRAIL_POINTS - 1));
-            if (Math.hypot(point.x - px, point.y - py, point.z - pz) < 0.25) return;
-        }
-        if (ball.trailCount < TRAIL_POINTS) {
-            positions.setXYZ(ball.trailCount, point.x, point.y, point.z);
-            ball.trailCount += 1;
-        } else {
-            for (let i = 0; i < TRAIL_POINTS - 1; i += 1) {
-                positions.setXYZ(i, positions.getX(i + 1), positions.getY(i + 1), positions.getZ(i + 1));
-            }
-            positions.setXYZ(TRAIL_POINTS - 1, point.x, point.y, point.z);
-        }
-        ball.trail.geometry.setDrawRange(0, Math.max(2, ball.trailCount));
-        positions.needsUpdate = true;
-        ball.trail.visible = ball.trailCount > 1;
+        if (!ball.samples) ball.samples = [];
+        const prev = ball.samples[ball.samples.length - 1];
+        if (prev && Math.hypot(point.x - prev.x, point.y - prev.y, point.z - prev.z) < 0.18) return;
+        ball.samples.push({ x: point.x, y: point.y, z: point.z });
+        if (ball.samples.length > 16) ball.samples.shift();
+        if (ball.samples.length < 2) return;
+        const positions = [];
+        const colors = [];
+        const indices = [];
+        const half = 0.16;
+        ball.samples.forEach((sample, index) => {
+            const next = ball.samples[Math.min(ball.samples.length - 1, index + 1)];
+            const prevSample = ball.samples[Math.max(0, index - 1)];
+            let dx = next.x - prevSample.x;
+            let dy = next.y - prevSample.y;
+            let dz = next.z - prevSample.z;
+            const len = Math.hypot(dx, dy, dz) || 1;
+            dx /= len;
+            dy /= len;
+            dz /= len;
+            const fade = index / (ball.samples.length - 1);
+            const strips = [
+                [ -dz * half, 0, dx * half ],
+                [ 0, half, 0 ]
+            ];
+            strips.forEach((offset, strip) => {
+                const base = (index * strips.length + strip) * 2;
+                positions.push(
+                    sample.x + offset[0], sample.y + offset[1], sample.z + offset[2],
+                    sample.x - offset[0], sample.y - offset[1], sample.z - offset[2]
+                );
+                colors.push(1, 0.95, 0.72, fade, 1, 0.95, 0.72, fade);
+                if (index < ball.samples.length - 1) {
+                    const nextBase = base + strips.length * 2;
+                    indices.push(base, base + 1, nextBase, base + 1, nextBase + 1, nextBase);
+                }
+            });
+        });
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+        geometry.setIndex(indices);
+        ball.trail.geometry.dispose();
+        ball.trail.geometry = geometry;
+        ball.trail.visible = true;
     }
 
     secureCatch(ball, spot, airDistance) {
@@ -458,7 +486,7 @@ class Football {
 
         ball.last = pos;
         ball.mesh.position.set(pos.x, pos.y, pos.z);
-        this.orient(ball.mesh, ball.velocity, elapsed, 13 + ball.speed * 0.25);
+        this.orient(ball.mesh, ball.velocity, elapsed, 26 + ball.speed * 0.45);
         this.pushTrail(ball, pos);
     }
 

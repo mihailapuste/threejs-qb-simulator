@@ -13,6 +13,8 @@ export function createHud() {
     const feedback = document.getElementById('feedback');
     const routeDisplay = document.getElementById('route-display');
     const downDisplay = document.getElementById('down-display');
+    const yardDisplay = document.getElementById('yard-display');
+    const playClockDisplay = document.getElementById('play-clock');
     const clockDisplay = document.getElementById('clock-display');
     const scoreDisplay = document.getElementById('score-display');
     const catchCounter = document.getElementById('catch-counter');
@@ -59,8 +61,10 @@ export function createHud() {
             catchCounter.textContent = catches === 1 ? '1 catch' : `${catches} catches`;
             if (route) routeDisplay.textContent = routeLabel(route);
         },
-        setSituation({ down, clock, gain } = {}) {
+        setSituation({ down, clock, gain, yard, playClock } = {}) {
             if (downDisplay) downDisplay.textContent = gain == null ? down : `${down}  ${gain > 0 ? '+' : ''}${gain}`;
+            if (yardDisplay) yardDisplay.textContent = yard || '';
+            if (playClockDisplay) playClockDisplay.textContent = playClock || '';
             if (clockDisplay) clockDisplay.textContent = clock || '';
         },
         renderPlaybook(plays, currentId, onSelect, onDelete, onClose) {

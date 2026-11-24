@@ -86,7 +86,7 @@ npm run preview
 
 ## Assets
 
-The players, the offensive line, the stands, the ball, and the sounds are original code. No downloaded model is shipped.
+The players, the offensive line, the stands, the ball, and the sounds are original code. No downloaded model is shipped. Each athlete is a shared low-poly rig: helmet, facemask, shoulder pads, and a jersey number, with a stance, a run cycle, a block, and a catch. The crowd, the throw, and the catch are synthesized in the browser. Nothing here is a downloaded audio or mesh file.
 
 The previous player files were added on 2025-03-25 by Mihai Lapuste (`add football palyer`, `add main player body`). Both GLBs carried Sketchfab export metadata:
 

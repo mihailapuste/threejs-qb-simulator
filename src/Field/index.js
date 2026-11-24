@@ -23,6 +23,25 @@ class Field {
         this.world.addBody(this.fieldBody);
         this.createSimpleField();
         this.createStadium();
+        this.createSky();
+    }
+
+    createSky() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 4;
+        canvas.height = 512;
+        const paint = canvas.getContext('2d');
+        const gradient = paint.createLinearGradient(0, 0, 0, 512);
+        gradient.addColorStop(0, '#2f74d8');
+        gradient.addColorStop(0.42, '#7eb4ef');
+        gradient.addColorStop(0.74, '#f3d7ae');
+        gradient.addColorStop(1, '#e7b184');
+        paint.fillStyle = gradient;
+        paint.fillRect(0, 0, 4, 512);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        this.scene.background = texture;
+        this.scene.fog = new THREE.Fog(0xe8c4a0, 85, 230);
     }
 
     toggleField() {
@@ -123,24 +142,27 @@ class Field {
         yardMarkers.forEach(marker => {
             // Create upside-down numbers for the top of the field (as seen in the reference image)
             const yardNumber = document.createElement('canvas');
-            yardNumber.width = 128;
+            yardNumber.width = 256;
             yardNumber.height = 128;
             const context = yardNumber.getContext('2d');
-            context.fillStyle = 'white';
-            context.font = 'bold 96px Arial';
+            context.font = '700 92px sans-serif';
             context.textAlign = 'center';
             context.textBaseline = 'middle';
-            context.fillText(marker.text, 64, 64);
+            context.lineWidth = 10;
+            context.strokeStyle = '#16301f';
+            context.strokeText(marker.text, 128, 68);
+            context.fillStyle = '#f4f7f2';
+            context.fillText(marker.text, 128, 68);
             
             const numberTexture = new THREE.CanvasTexture(yardNumber);
+            numberTexture.colorSpace = THREE.SRGBColorSpace;
             const numberMaterial = new THREE.MeshBasicMaterial({ 
                 map: numberTexture,
                 transparent: true,
                 side: THREE.DoubleSide
             });
             
-            // Numbers should be properly sized and positioned
-            const numberGeometry = new THREE.PlaneGeometry(3, 3);
+            const numberGeometry = new THREE.PlaneGeometry(6.4, 3.2);
             
             // Top row of numbers (upside down in the reference image)
             const topNumberMesh = new THREE.Mesh(numberGeometry, numberMaterial);
@@ -187,30 +209,22 @@ class Field {
         const endZoneGeometry = new THREE.PlaneGeometry(10, 53.3);
         
         // Dark end zones (almost black with a hint of color)
-        const endZoneMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x222222,
-            roughness: 0.8,
-            emissive: 0x111111,
-            emissiveIntensity: 0.1
-        });
-        
-        // Left end zone
-        const leftEndZone = new THREE.Mesh(endZoneGeometry, endZoneMaterial);
+        const leftMaterial = new THREE.MeshStandardMaterial({ color: 0x1d4e89, roughness: 0.86 });
+        const rightMaterial = new THREE.MeshStandardMaterial({ color: 0x8c2f39, roughness: 0.86 });
+        const leftEndZone = new THREE.Mesh(endZoneGeometry, leftMaterial);
         leftEndZone.rotation.x = -Math.PI / 2;
-        leftEndZone.position.set(-55, 0.01, 0);
+        leftEndZone.position.set(-55, 0.012, 0);
+        leftEndZone.receiveShadow = true;
         this.scene.add(leftEndZone);
         this.simpleFieldElements.push(leftEndZone);
-        
-        // Right end zone
-        const rightEndZone = new THREE.Mesh(endZoneGeometry, endZoneMaterial);
+        const rightEndZone = new THREE.Mesh(endZoneGeometry, rightMaterial);
         rightEndZone.rotation.x = -Math.PI / 2;
-        rightEndZone.position.set(55, 0.01, 0);
+        rightEndZone.position.set(55, 0.012, 0);
+        rightEndZone.receiveShadow = true;
         this.scene.add(rightEndZone);
         this.simpleFieldElements.push(rightEndZone);
-        
-        // Add "FORZA" text in both end zones (rotated 90 degrees to match image)
-        this.addEndZoneText("FORZA", -55, 0xFFFFFF, Math.PI/2);
-        this.addEndZoneText("FORZA", 55, 0xFFFFFF, -Math.PI/2);
+        this.addEndZoneText('HOME', -55, 0xf4f7f2, Math.PI / 2);
+        this.addEndZoneText('AWAY', 55, 0xf4f7f2, -Math.PI / 2);
     }
     
     addEndZoneText(text, position, color, rotation = 0) {
@@ -241,26 +255,31 @@ class Field {
     }
 
     addGoalPosts() {
-        // Add simple goal posts at each end of the field
-        const postMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0xFFFFFF,
-            emissive: 0xFFFFFF,
-            emissiveIntensity: 0.2
+        const postMaterial = new THREE.MeshStandardMaterial({ color: 0xf4f1e8, roughness: 0.45, metalness: 0.2 });
+        [-60, 60].forEach((x) => {
+            const group = new THREE.Group();
+            const upright = new THREE.CylinderGeometry(0.08, 0.08, 8, 8);
+            [-2.2, 2.2].forEach((z) => {
+                const pole = new THREE.Mesh(upright, postMaterial);
+                pole.position.set(0, 4, z);
+                group.add(pole);
+            });
+            const crossbar = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 4.4, 6), postMaterial);
+            crossbar.rotation.x = Math.PI / 2;
+            crossbar.position.set(0, 6.2, 0);
+            group.add(crossbar);
+            const away = Math.sign(x);
+            const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.4, 6), postMaterial);
+            neck.rotation.z = Math.PI / 2;
+            neck.position.set(away * 1.2, 6.2, 0);
+            group.add(neck);
+            const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 6.2, 6), postMaterial);
+            stem.position.set(away * 2.4, 3.1, 0);
+            group.add(stem);
+            group.position.set(x, 0, 0);
+            this.scene.add(group);
+            this.simpleFieldElements.push(group);
         });
-        
-        // Create left goal post (simple upright)
-        const leftPostGeometry = new THREE.CylinderGeometry(0.1, 0.1, 10, 8);
-        const leftPost = new THREE.Mesh(leftPostGeometry, postMaterial);
-        leftPost.position.set(-55, 5, 0);
-        this.scene.add(leftPost);
-        this.simpleFieldElements.push(leftPost);
-        
-        // Create right goal post (simple upright)
-        const rightPostGeometry = new THREE.CylinderGeometry(0.1, 0.1, 10, 8);
-        const rightPost = new THREE.Mesh(rightPostGeometry, postMaterial);
-        rightPost.position.set(55, 5, 0);
-        this.scene.add(rightPost);
-        this.simpleFieldElements.push(rightPost);
     }
 
     bindOffense(offense) {

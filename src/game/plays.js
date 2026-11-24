@@ -26,9 +26,13 @@ function routeStep(step) {
     return { x: clamp(x, -8, 60), z: clamp(z, -40, 40) };
 }
 
-export function clampAlignment(x, z) {
-    let nx = Math.round(clamp(Number(x) || 0, -8, 0) * 2) / 2;
-    let nz = Math.round(clamp(Number(z) || 0, -22, 22) * 2) / 2;
+export function clampAlignment(x, z, snap = true) {
+    let nx = clamp(Number(x) || 0, -8, 0);
+    let nz = clamp(Number(z) || 0, -22, 22);
+    if (snap) {
+        nx = Math.round(nx * 2) / 2;
+        nz = Math.round(nz * 2) / 2;
+    }
     if (nx > -1.5 && nz > -3.4 && nz < 4.8) {
         nz = nz < 0.7 ? -3.5 : 5;
     }

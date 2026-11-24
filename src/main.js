@@ -16,7 +16,7 @@ import {
     normalizePlay,
     saveCustomPlays
 } from './game/plays.js';
-import { formatClock, formatDown, freshDrive, resolveDrive, snapDrive, tickClock } from './game/drive.js';
+import { formatClock, formatDown, formatPlayClock, formatYardLine, freshDrive, resolveDrive, snapDrive, tickClock, tickPlayClock } from './game/drive.js';
 import { scoreRun } from './game/scoring.js';
 
 const touchMode = isCoarsePointer();
@@ -42,7 +42,7 @@ let hinted = false;
 let customs = loadCustomPlays();
 let selected = PRESET_PLAYS[0];
 let drive = freshDrive();
-let runClock = 0;
+let playClockWhistled = false;
 let sun = null;
 
 const scene = new THREE.Scene();
@@ -100,8 +100,11 @@ function refresh() {
         catches: offense ? offense.catchCount : 0,
         route: selected.name
     });
+    const playLive = offense && offense.mode !== 'pre';
     hud.setSituation({
         down: formatDown(drive),
+        yard: formatYardLine(drive.los),
+        playClock: formatPlayClock(playLive ? drive.playClock : 40),
         clock: formatClock(drive.clock),
         gain: liveGain
     });
@@ -126,7 +129,7 @@ function spotOffense() {
     player.setRunControl({ attack: false, look: true, suspended: false, cruise: 5.4 });
     football.setHandVisible(true);
     setThrowLabel('Throw');
-    runClock = 0;
+    playClockWhistled = false;
 }
 
 function showOutcome(scored) {
@@ -179,7 +182,7 @@ function runHike() {
     offense.setPlay(selected);
     const kind = offense.snap();
     drive = snapDrive(drive);
-    runClock = 0;
+    playClockWhistled = false;
     if (kind === 'keeper') player.setRunControl({ attack: false, look: true, suspended: false, cruise: 8.6 });
     else if (kind === 'handoff') {
         player.setRunControl({ attack: false, look: false, suspended: true, cruise: 5.4 });
@@ -386,10 +389,21 @@ document.getElementById('mute-button').addEventListener('click', toggleMute);
 window.addEventListener('pointerdown', () => sfx.unlock(), { once: true });
 window.addEventListener('keydown', () => sfx.unlock(), { once: true });
 
+function whistlePlayClock() {
+    if (playClockWhistled || !offense) return;
+    if (offense.isRunLive()) {
+        playClockWhistled = true;
+        endRun();
+    } else if (offense.mode === 'pass' && football && !football.liveBall()) {
+        playClockWhistled = true;
+        applyResolved(resolveDrive(drive, { incomplete: true }), { label: 'DELAY', points: 0, touchdown: false });
+    }
+}
+
 function setupLighting() {
-    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-    scene.add(new THREE.HemisphereLight(0xc5e4ff, 0x2a4a28, 0.4));
-    sun = new THREE.DirectionalLight(0xfff4e0, 1.25);
+    scene.add(new THREE.AmbientLight(0xfff4e4, 0.38));
+    scene.add(new THREE.HemisphereLight(0x9ecbff, 0x3d6a32, 0.62));
+    sun = new THREE.DirectionalLight(0xfff1d0, 1.55);
     sun.position.set(18, 46, 14);
     sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024);
@@ -460,6 +474,9 @@ function animate() {
 
     if (!gameState.paused && gameState.ready && !gameState.designing) {
         if (drive.running && !hud.playbookOpen()) drive = tickClock(drive, delta);
+        const playLive = offense && offense.mode !== 'pre' && !hud.playbookOpen();
+        drive = tickPlayClock(drive, delta, playLive);
+        if (playLive && drive.playClock <= 0) whistlePlayClock();
         if (drive.over && !gameState.timeShown) {
             gameState.timeShown = true;
             hud.showResult({ label: 'TIME', points: 0, touchdown: false });
@@ -488,10 +505,9 @@ function animate() {
         }
         offense.update(delta, football.liveBall());
         if (offense.isRunLive()) {
-            runClock += delta;
             const x = carrierX();
             const z = offense.mode === 'keeper' ? camera.position.z : offense.rb.z;
-            if (x >= 50 || Math.abs(z) > 24.5 || runClock > 8) endRun();
+            if (x >= 50 || Math.abs(z) > 24.5) endRun();
         }
         if (player.consumeFullChargeTick()) sfx.full();
         const throwData = player.attackEnabled ? player.getThrowData() : null;

@@ -46,15 +46,13 @@ JS bundle: 703 KB (185 KB gzip) before, about 710 KB (189 KB gzip) after. CSS 7.
 
 Shipped on this branch: code-built offense (four receivers, five linemen, a tight end, and a back), preset plays plus a hand-drawn play designer saved in `localStorage`, four downs, and stands drawn in code. The Sketchfab player meshes are no longer in the tree.
 
-## Milestone 3 — the field, up close
+## Milestone 3 — looks, without giving the frame rate back
 
-- Yard numbers that read from the pocket, and goal posts with a crossbar.
-- A little more life in the stands without another heavy mesh.
-- Jerseys you can tell apart at a glance, still in one draw.
+Shipped on this branch. The offense is a shared low-poly rig (helmet, pads, jersey numbers) with a stance, run, block, and catch. The sky, end zones, yard numbers, goal posts, ball spiral, and trail are drawn in code. Crowd and catch sounds are synthesized. The play designer can turn snap off, the routes preview before the hike, and the HUD shows the yard line and a 40-second play clock.
 
 ## Milestone 4 — juice
 
-- A ribbon on the ball, a catch burst, a short hit-stop, crowd swell from the same synthesizer.
+- A catch burst and a short hit-stop. The trail and the crowd bed already exist.
 - The camera sells the touchdown without covering the field.
 
 ## Milestone 5 — modes and settings
